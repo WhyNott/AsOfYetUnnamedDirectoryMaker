@@ -1,0 +1,593 @@
+let db;
+let directoryData = [];
+let currentRow = -1;
+let currentCol = -1;
+let maxColumns = 0;
+let csrfToken = null;
+let deleteRowIndex = -1;
+
+// Get CSRF token from meta tag if available
+function getCSRFToken() {
+    const metaTag = document.querySelector('meta[name="csrf-token"]');
+    if (metaTag) {
+        return metaTag.getAttribute('content');
+    }
+    return null;
+}
+
+// Initialize CSRF token
+csrfToken = getCSRFToken();
+
+// Initialize SQL.js and load the database
+initSqlJs({
+    locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+}).then(function(SQL){
+    loadDirectory();
+});
+
+async function loadDirectory() {
+    try {
+        const response = await fetch('/download/directory.db', {
+            method: 'GET',
+            credentials: 'same-origin'
+        });
+        if (!response.ok) {
+            if (response.status === 401 || response.status === 403) {
+                document.getElementById('loading').textContent = 'Access denied. Please login to view the directory.';
+            } else {
+                document.getElementById('loading').textContent = 'No directory data available yet. Please check with the administrator.';
+            }
+            return;
+        }
+        
+        const arrayBuffer = await response.arrayBuffer();
+        const uInt8Array = new Uint8Array(arrayBuffer);
+        
+        const SQL = await initSqlJs({
+            locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+        });
+        
+        db = new SQL.Database(uInt8Array);
+        
+        loadDirectoryData();
+        
+    } catch (error) {
+        console.error('Error loading database:', error);
+        const errorMessage = error.message || 'Unknown error';
+        document.getElementById('loading').textContent = `Error loading directory data: ${errorMessage}`;
+    }
+}
+
+function loadDirectoryData() {
+    try {
+        const stmt = db.prepare("SELECT id, data FROM directory ORDER BY id");
+        const rows = [];
+        
+        while (stmt.step()) {
+            const row = stmt.getAsObject();
+            rows.push({
+                id: row.id,
+                data: JSON.parse(row.data)
+            });
+        }
+        
+        stmt.free();
+        
+        directoryData = rows;
+        renderTable();
+        
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('directoryTable').style.display = 'table';
+        
+        updateRecordCount();
+        
+    } catch (error) {
+        console.error('Error processing directory data:', error);
+        document.getElementById('loading').textContent = 'Error processing directory data.';
+    }
+}
+
+function renderTable() {
+    if (directoryData.length === 0) {
+        document.getElementById('loading').textContent = 'No directory entries found.';
+        return;
+    }
+    
+    // Determine the maximum number of columns
+    maxColumns = 0;
+    directoryData.forEach(row => {
+        if (row.data.length > maxColumns) {
+            maxColumns = row.data.length;
+        }
+    });
+    
+    // Create header
+    const headerRow = document.getElementById('tableHeader');
+    headerRow.innerHTML = '';
+    const headerRowElement = document.createElement('tr');
+    
+    for (let i = 0; i < maxColumns; i++) {
+        const th = document.createElement('th');
+        th.textContent = `Column ${i + 1}`;
+        headerRowElement.appendChild(th);
+    }
+    
+    // Add delete column header
+    const deleteHeader = document.createElement('th');
+    deleteHeader.textContent = 'Actions';
+    deleteHeader.className = 'delete-cell';
+    headerRowElement.appendChild(deleteHeader);
+    
+    headerRow.appendChild(headerRowElement);
+    
+    // Create body
+    const tbody = document.getElementById('tableBody');
+    tbody.innerHTML = '';
+    
+    directoryData.forEach((entry, rowIndex) => {
+        const tr = document.createElement('tr');
+        
+        for (let colIndex = 0; colIndex < maxColumns; colIndex++) {
+            const td = document.createElement('td');
+            const cellValue = entry.data[colIndex] || '';
+            td.textContent = cellValue;
+            td.dataset.row = rowIndex;
+            td.dataset.col = colIndex;
+            
+            // Add click handler for corrections
+            td.addEventListener('click', function() {
+                openCorrectionModal(rowIndex, colIndex, cellValue);
+            });
+            
+            tr.appendChild(td);
+        }
+        
+        // Add delete button cell
+        const deleteCell = document.createElement('td');
+        deleteCell.className = 'delete-cell';
+        
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'delete-btn';
+        deleteBtn.innerHTML = '<span class="delete-icon">🗑️</span>';
+        deleteBtn.title = 'Delete this row';
+        deleteBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            openDeleteModal(rowIndex, entry.data);
+        });
+        
+        deleteCell.appendChild(deleteBtn);
+        tr.appendChild(deleteCell);
+        
+        tbody.appendChild(tr);
+    });
+}
+
+function updateRecordCount() {
+    document.getElementById('recordCount').textContent = `${directoryData.length} records`;
+}
+
+function openCorrectionModal(row, col, currentValue) {
+    currentRow = row;
+    currentCol = col;
+    
+    document.getElementById('currentValue').textContent = currentValue;
+    document.getElementById('newValue').value = currentValue;
+    document.getElementById('correctionModal').style.display = 'block';
+    
+    // Focus on input field
+    setTimeout(() => {
+        document.getElementById('newValue').focus();
+        document.getElementById('newValue').select();
+    }, 100);
+}
+
+
+// Modal functionality
+document.querySelector('.close').addEventListener('click', function() {
+    document.getElementById('correctionModal').style.display = 'none';
+});
+
+document.getElementById('cancelCorrection').addEventListener('click', function() {
+    document.getElementById('correctionModal').style.display = 'none';
+});
+
+document.getElementById('submitCorrection').addEventListener('click', async function() {
+    const newValue = document.getElementById('newValue').value;
+    
+    if (currentRow === -1 || currentCol === -1) {
+        showErrorMessage('Error: Invalid cell selection');
+        return;
+    }
+    
+    // Validate input length
+    if (newValue.length > 1000) {
+        showErrorMessage('Value too long. Maximum 1000 characters allowed.');
+        return;
+    }
+    
+    try {
+        const headers = {
+            'Content-Type': 'application/json',
+        };
+        
+        // Add CSRF token if available
+        if (csrfToken) {
+            headers['X-CSRF-Token'] = csrfToken;
+        }
+        
+        const response = await fetch('/api/corrections', {
+            method: 'POST',
+            headers: headers,
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                row: currentRow,
+                column: currentCol,
+                value: newValue
+            })
+        });
+        
+        if (response.ok) {
+            showSuccessMessage('Correction submitted successfully! The directory will be updated shortly.');
+            document.getElementById('correctionModal').style.display = 'none';
+            
+            // Refresh the page after a short delay to get the updated data
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            const errorText = await response.text();
+            let errorMessage = 'Error submitting correction';
+            
+            if (response.status === 400) {
+                errorMessage = 'Invalid input: ' + errorText;
+            } else if (response.status === 401) {
+                errorMessage = 'Please login to make corrections';
+            } else if (response.status === 403) {
+                errorMessage = 'Access denied. CSRF token may be invalid.';
+            } else if (response.status >= 500) {
+                errorMessage = 'Server error. Please try again later.';
+            } else {
+                errorMessage += ': ' + errorText;
+            }
+            
+            showErrorMessage(errorMessage);
+        }
+    } catch (error) {
+        console.error('Error submitting correction:', error);
+        showErrorMessage('Network error submitting correction. Please check your connection and try again.');
+    }
+});
+
+// Close modal when clicking outside of it
+window.addEventListener('click', function(event) {
+    const modal = document.getElementById('correctionModal');
+    if (event.target === modal) {
+        modal.style.display = 'none';
+    }
+});
+
+// Handle Enter key in the correction input
+document.getElementById('newValue').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        document.getElementById('submitCorrection').click();
+    }
+});
+
+// Add Row functionality
+document.getElementById('addRowBtn').addEventListener('click', function() {
+    openAddRowModal();
+});
+
+function openAddRowModal() {
+    const inputsContainer = document.getElementById('addRowInputs');
+    inputsContainer.innerHTML = '';
+    
+    // Create input fields for each column
+    for (let i = 0; i < Math.max(maxColumns, 3); i++) {
+        const div = document.createElement('div');
+        div.style.marginBottom = '10px';
+        
+        const label = document.createElement('label');
+        label.textContent = `Column ${i + 1}:`;
+        label.style.display = 'block';
+        label.style.marginBottom = '5px';
+        
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = `newRowCol${i}`;
+        input.style.width = '100%';
+        input.style.padding = '8px';
+        input.style.border = '1px solid #ddd';
+        input.style.borderRadius = '4px';
+        
+        div.appendChild(label);
+        div.appendChild(input);
+        inputsContainer.appendChild(div);
+    }
+    
+    document.getElementById('addRowModal').style.display = 'block';
+    
+    // Focus on first input
+    setTimeout(() => {
+        document.getElementById('newRowCol0').focus();
+    }, 100);
+}
+
+// Add Row Modal close handlers
+document.getElementById('closeAddRow').addEventListener('click', function() {
+    document.getElementById('addRowModal').style.display = 'none';
+});
+
+document.getElementById('cancelNewRow').addEventListener('click', function() {
+    document.getElementById('addRowModal').style.display = 'none';
+});
+
+// Submit new row
+document.getElementById('submitNewRow').addEventListener('click', async function() {
+    const rowData = [];
+    const numColumns = Math.max(maxColumns, 3);
+    
+    for (let i = 0; i < numColumns; i++) {
+        const input = document.getElementById(`newRowCol${i}`);
+        rowData.push(input ? input.value : '');
+    }
+    
+    // Remove trailing empty strings
+    while (rowData.length > 0 && rowData[rowData.length - 1] === '') {
+        rowData.pop();
+    }
+    
+    if (rowData.length === 0 || rowData.every(val => val === '')) {
+        alert('Please enter at least one value');
+        return;
+    }
+    
+    try {
+        const headers = {
+            'Content-Type': 'application/json',
+        };
+        
+        // Add CSRF token if available
+        if (csrfToken) {
+            headers['X-CSRF-Token'] = csrfToken;
+        }
+        
+        const response = await fetch('/api/add-row', {
+            method: 'POST',
+            headers: headers,
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                data: rowData
+            })
+        });
+        
+        if (response.ok) {
+            showSuccessMessage('Row added successfully! The directory will be updated shortly.');
+            document.getElementById('addRowModal').style.display = 'none';
+            
+            // Refresh the page after a short delay to get the updated data
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            const errorText = await response.text();
+            let errorMessage = 'Error adding row';
+            
+            if (response.status === 400) {
+                errorMessage = 'Invalid input: ' + errorText;
+            } else if (response.status === 401) {
+                errorMessage = 'Please login to add rows';
+            } else if (response.status === 403) {
+                errorMessage = 'Access denied. CSRF token may be invalid.';
+            } else if (response.status >= 500) {
+                errorMessage = 'Server error. Please try again later.';
+            } else {
+                errorMessage += ': ' + errorText;
+            }
+            
+            showErrorMessage(errorMessage);
+        }
+    } catch (error) {
+        console.error('Error adding row:', error);
+        showErrorMessage('Network error adding row. Please check your connection and try again.');
+    }
+});
+
+// Close add row modal when clicking outside
+window.addEventListener('click', function(event) {
+    const addRowModal = document.getElementById('addRowModal');
+    if (event.target === addRowModal) {
+        addRowModal.style.display = 'none';
+    }
+});
+
+// Utility functions for user feedback
+function showErrorMessage(message) {
+    // Try using a toast notification if available, otherwise use alert
+    if (window.createToast) {
+        window.createToast(message, 'error');
+    } else {
+        alert(message);
+    }
+}
+
+function showSuccessMessage(message) {
+    // Try using a toast notification if available, otherwise use alert
+    if (window.createToast) {
+        window.createToast(message, 'success');
+    } else {
+        alert(message);
+    }
+}
+
+// Input validation helpers
+function validateCellValue(value) {
+    if (typeof value !== 'string') {
+        return false;
+    }
+    if (value.length > 1000) {
+        return false;
+    }
+    return true;
+}
+
+// Debounce function for search
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Update search to use debounced function
+const debouncedSearch = debounce(function(searchTerm) {
+    const rows = document.querySelectorAll('#tableBody tr');
+    
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        let matchFound = false;
+        
+        cells.forEach(cell => {
+            if (cell.textContent.toLowerCase().includes(searchTerm)) {
+                matchFound = true;
+            }
+        });
+        
+        row.style.display = matchFound ? '' : 'none';
+    });
+}, 300);
+
+// Replace the existing search event listener
+document.getElementById('searchBox').removeEventListener('input', function(e) {
+    const searchTerm = e.target.value.toLowerCase();
+    const rows = document.querySelectorAll('#tableBody tr');
+    
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        let matchFound = false;
+        
+        cells.forEach(cell => {
+            if (cell.textContent.toLowerCase().includes(searchTerm)) {
+                matchFound = true;
+            }
+        });
+        
+        row.style.display = matchFound ? '' : 'none';
+    });
+});
+
+document.getElementById('searchBox').addEventListener('input', function(e) {
+    const searchTerm = e.target.value.toLowerCase();
+    debouncedSearch(searchTerm);
+});
+
+// Delete row functionality
+function openDeleteModal(rowIndex, rowData) {
+    deleteRowIndex = rowIndex;
+    
+    // Show the row data in a readable format
+    const displayData = rowData.filter(cell => cell && cell.trim() !== '').join(' | ');
+    document.getElementById('deleteRowData').textContent = displayData || 'Empty row';
+    
+    // Clear the reason field
+    document.getElementById('deleteReason').value = '';
+    
+    // Show the modal
+    document.getElementById('deleteRowModal').style.display = 'block';
+    
+    // Focus on reason field
+    setTimeout(() => {
+        document.getElementById('deleteReason').focus();
+    }, 100);
+}
+
+// Delete modal event handlers
+document.getElementById('closeDeleteRow').addEventListener('click', function() {
+    document.getElementById('deleteRowModal').style.display = 'none';
+});
+
+document.getElementById('cancelDelete').addEventListener('click', function() {
+    document.getElementById('deleteRowModal').style.display = 'none';
+});
+
+document.getElementById('confirmDelete').addEventListener('click', async function() {
+    if (deleteRowIndex === -1) {
+        showErrorMessage('Error: No row selected for deletion');
+        return;
+    }
+    
+    const reason = document.getElementById('deleteReason').value || '';
+    
+    try {
+        const headers = {
+            'Content-Type': 'application/json',
+        };
+        
+        // Add CSRF token if available
+        if (csrfToken) {
+            headers['X-CSRF-Token'] = csrfToken;
+        }
+        
+        const response = await fetch('/api/delete-row', {
+            method: 'DELETE',
+            headers: headers,
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                row: deleteRowIndex,
+                reason: reason
+            })
+        });
+        
+        if (response.ok) {
+            showSuccessMessage('Row deleted successfully! The directory will be updated shortly.');
+            document.getElementById('deleteRowModal').style.display = 'none';
+            
+            // Refresh the page after a short delay to get the updated data
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            const errorText = await response.text();
+            let errorMessage = 'Error deleting row';
+            
+            if (response.status === 400) {
+                errorMessage = 'Invalid input: ' + errorText;
+            } else if (response.status === 401) {
+                errorMessage = 'Please login to delete rows';
+            } else if (response.status === 403) {
+                errorMessage = 'Access denied. CSRF token may be invalid.';
+            } else if (response.status === 404) {
+                errorMessage = 'Row not found or already deleted';
+            } else if (response.status >= 500) {
+                errorMessage = 'Server error. Please try again later.';
+            } else {
+                errorMessage += ': ' + errorText;
+            }
+            
+            showErrorMessage(errorMessage);
+        }
+    } catch (error) {
+        console.error('Error deleting row:', error);
+        showErrorMessage('Network error deleting row. Please check your connection and try again.');
+    }
+});
+
+// Close delete modal when clicking outside
+window.addEventListener('click', function(event) {
+    const deleteModal = document.getElementById('deleteRowModal');
+    if (event.target === deleteModal) {
+        deleteModal.style.display = 'none';
+    }
+});
+
+// Handle Enter key in the delete reason input
+document.getElementById('deleteReason').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        document.getElementById('confirmDelete').click();
+    }
+});
