@@ -1,5 +1,6 @@
 let db;
 let directoryData = [];
+let columnNames = [];
 let currentRow = -1;
 let currentCol = -1;
 let maxColumns = 0;
@@ -27,6 +28,9 @@ initSqlJs({
 
 async function loadDirectory() {
     try {
+        // Load column names first
+        await loadColumnNames();
+        
         const response = await fetch('/download/directory.db', {
             method: 'GET',
             credentials: 'same-origin'
@@ -55,6 +59,24 @@ async function loadDirectory() {
         console.error('Error loading database:', error);
         const errorMessage = error.message || 'Unknown error';
         document.getElementById('loading').textContent = `Error loading directory data: ${errorMessage}`;
+    }
+}
+
+async function loadColumnNames() {
+    try {
+        const response = await fetch('/api/columns', {
+            method: 'GET',
+            credentials: 'same-origin'
+        });
+        if (response.ok) {
+            columnNames = await response.json();
+        } else {
+            // Fallback to default column names
+            columnNames = [];
+        }
+    } catch (error) {
+        console.error('Error loading column names:', error);
+        columnNames = [];
     }
 }
 
@@ -108,7 +130,7 @@ function renderTable() {
     
     for (let i = 0; i < maxColumns; i++) {
         const th = document.createElement('th');
-        th.textContent = `Column ${i + 1}`;
+        th.textContent = columnNames[i] || `Column ${i + 1}`;
         headerRowElement.appendChild(th);
     }
     
@@ -288,7 +310,7 @@ function openAddRowModal() {
         div.style.marginBottom = '10px';
         
         const label = document.createElement('label');
-        label.textContent = `Column ${i + 1}:`;
+        label.textContent = `${columnNames[i] || `Column ${i + 1}`}:`;
         label.style.display = 'block';
         label.style.marginBottom = '5px';
         

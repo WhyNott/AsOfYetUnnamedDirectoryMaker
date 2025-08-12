@@ -104,8 +104,8 @@ func main() {
 	r.Use(app.LoggingMiddleware)
 
 	r.HandleFunc("/", app.handleHome).Methods("GET")
-	r.HandleFunc("/test", app.handleTest).Methods("GET")                // Simple test endpoint
-	r.HandleFunc("/admin-direct", app.handleAdminDirect).Methods("GET") // Bypass OAuth for testing
+	//r.HandleFunc("/test", app.handleTest).Methods("GET")                // Simple test endpoint
+	//r.HandleFunc("/admin-direct", app.handleAdminDirect).Methods("GET") // Bypass OAuth for testing
 	r.HandleFunc("/login", app.handleLogin).Methods("GET")
 	r.HandleFunc("/logout", app.handleLogout).Methods("GET")
 	r.HandleFunc("/auth/callback", app.handleAuthCallback).Methods("GET")
@@ -113,6 +113,7 @@ func main() {
 	r.HandleFunc("/import", app.AuthMiddleware(app.CSRFMiddleware(app.handleImport))).Methods("POST")
 	r.HandleFunc("/api/preview-sheet", app.AuthMiddleware(app.CSRFMiddleware(app.handlePreviewSheet))).Methods("POST")
 	r.HandleFunc("/api/directory", app.handleGetDirectory).Methods("GET")
+	r.HandleFunc("/api/columns", app.handleGetColumns).Methods("GET")
 	r.HandleFunc("/api/corrections", app.AuthMiddleware(app.CSRFMiddleware(app.handleCorrection))).Methods("POST")
 	r.HandleFunc("/api/add-row", app.AuthMiddleware(app.CSRFMiddleware(app.handleAddRow))).Methods("POST")
 	r.HandleFunc("/api/delete-row", app.AuthMiddleware(app.CSRFMiddleware(app.handleDeleteRow))).Methods("DELETE")
@@ -129,6 +130,11 @@ func (app *App) initDatabase() error {
 		CREATE TABLE IF NOT EXISTS directory (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			data TEXT NOT NULL
+		);
+		
+		CREATE TABLE IF NOT EXISTS directory_columns (
+			id INTEGER PRIMARY KEY,
+			columns TEXT NOT NULL
 		);
 		
 		CREATE TABLE IF NOT EXISTS admin_sessions (

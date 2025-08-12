@@ -81,6 +81,7 @@ func (app *App) handleImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("Import successful, redirecting to admin page with success message")
 	http.Redirect(w, r, "/admin?imported=true", http.StatusTemporaryRedirect)
 }
 
@@ -101,8 +102,38 @@ func (app *App) importFromSheet(ctx context.Context, spreadsheetID string, token
 		return fmt.Errorf("no data found in sheet")
 	}
 
+	// Extract and store column names from the first row
+	var columns []string
+	if len(resp.Values) > 0 {
+		for i, cell := range resp.Values[0] {
+			if cell != nil {
+				columnName := fmt.Sprintf("%v", cell)
+				if columnName == "" {
+					columnName = fmt.Sprintf("Column %d", i+1)
+				}
+				columns = append(columns, SanitizeInput(columnName))
+			} else {
+				columns = append(columns, fmt.Sprintf("Column %d", i+1))
+			}
+		}
+	}
+
+	// Store column names
+	columnsJSON, err := json.Marshal(columns)
+	if err != nil {
+		return fmt.Errorf("failed to marshal column names: %v", err)
+	}
+
 	if _, err := app.DB.Exec("DELETE FROM directory"); err != nil {
 		return fmt.Errorf("failed to clear directory table: %v", err)
+	}
+
+	if _, err := app.DB.Exec("DELETE FROM directory_columns"); err != nil {
+		return fmt.Errorf("failed to clear directory columns table: %v", err)
+	}
+
+	if _, err := app.DB.Exec("INSERT INTO directory_columns (id, columns) VALUES (1, ?)", string(columnsJSON)); err != nil {
+		return fmt.Errorf("failed to store column names: %v", err)
 	}
 
 	for i, row := range resp.Values {

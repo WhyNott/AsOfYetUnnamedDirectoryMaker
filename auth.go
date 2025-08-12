@@ -60,12 +60,31 @@ func (app *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Saved state in session: %s", state)
-	url := app.OAuthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	url := app.OAuthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "select_account"))
 	log.Printf("Redirecting to OAuth URL: %s", url)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
 func (app *App) handleLogout(w http.ResponseWriter, r *http.Request) {
+	// Get user email from session for database cleanup
+	userEmail := ""
+	if session, err := app.SessionStore.Get(r, "auth-session"); err == nil && session != nil {
+		if sessionDataJSON, ok := session.Values["session_data"].(string); ok {
+			var sessionData SessionData
+			if json.Unmarshal([]byte(sessionDataJSON), &sessionData) == nil {
+				userEmail = sessionData.UserEmail
+			}
+		}
+	}
+
+	// Clear session from database if we have user email
+	if userEmail != "" {
+		_, err := app.DB.Exec("DELETE FROM admin_sessions WHERE user_email = ?", userEmail)
+		if err != nil {
+			log.Printf("Failed to clear admin session from database: %v", err)
+		}
+	}
+
 	session, err := app.SessionStore.Get(r, "auth-session")
 	if err != nil {
 		// Even if we can't get the session, clear the cookie
@@ -215,6 +234,8 @@ func (app *App) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Admin handler called with URL: %s, imported param: %s", r.URL.String(), r.URL.Query().Get("imported"))
+	
 	userEmail, ok := r.Context().Value(UserEmailKey).(string)
 	if !ok {
 		log.Printf("User email not found in context")
@@ -228,6 +249,10 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Security token error", http.StatusInternalServerError)
 		return
 	}
+
+	// Check if import was successful
+	importSuccess := r.URL.Query().Get("imported") == "true"
+	log.Printf("Import success flag: %v", importSuccess)
 
 	tmpl := `
 <!DOCTYPE html>
@@ -246,6 +271,13 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
     <div class="container">
         <h1>Admin Panel</h1>
         <p>Welcome, {{.UserEmail}}</p>
+        
+        {{if .ImportSuccess}}
+        <div style="background: #d4edda; color: #155724; padding: 15px; border: 1px solid #c3e6cb; border-radius: 4px; margin-bottom: 20px;">
+            <strong>✅ Import Successful!</strong> The Google Sheet has been successfully imported into the directory.
+            <a href="/" style="color: #155724; text-decoration: underline; margin-left: 10px;">View Directory</a>
+        </div>
+        {{end}}
         
         <form action="/import" method="POST" id="importForm">
             <h2>Import Google Sheet</h2>
@@ -313,8 +345,30 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
         }
     });
     
-    document.getElementById('confirmImport').addEventListener('click', function() {
-        document.getElementById('importForm').submit();
+    document.getElementById('confirmImport').addEventListener('click', async function() {
+        const form = document.getElementById('importForm');
+        const formData = new FormData(form);
+        
+        try {
+            const response = await fetch('/import', {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin'
+            });
+            
+            if (response.redirected) {
+                // Follow the redirect manually
+                window.location.href = response.url;
+            } else if (response.ok) {
+                // If no redirect but successful, go to admin with success
+                window.location.href = '/admin?imported=true';
+            } else {
+                alert('Import failed: ' + await response.text());
+            }
+        } catch (error) {
+            console.error('Import error:', error);
+            alert('Import failed due to network error');
+        }
     });
     
     document.getElementById('cancelPreview').addEventListener('click', function() {
@@ -364,9 +418,14 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := struct {
-		UserEmail string
-		CSRFToken string
-	}{UserEmail: userEmail, CSRFToken: csrfToken}
+		UserEmail     string
+		CSRFToken     string
+		ImportSuccess bool
+	}{
+		UserEmail:     userEmail,
+		CSRFToken:     csrfToken,
+		ImportSuccess: importSuccess,
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.Execute(w, data); err != nil {

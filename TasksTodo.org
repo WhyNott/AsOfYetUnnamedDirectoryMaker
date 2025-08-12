@@ -1,0 +1,8 @@
+* Bugs
+- ~~When logging out as admin, the logout/login flow doesn't function properly. When I log out and then press the log in button again, I don't get taken to the google login page like I might expect to (to choose an account to log in as), instead I am logged in as my previous email automatically.~~
+  - ~~It might also be good to show who the user is logged in as on the main page.~~
+- ~~When the import is successful, it currently redirects to an empty page (admin?imported=true). This should be changed to something nicer.~~
+- ~~When the sheet is imported the column names are displayed correctly, but when they are shown to the user later they just show up as "Column 1", "Column 2", etc. in the frontend.~~
+  
+* Misc improvements
+- ~~When I attach a debugger, it complains that it uses go 1.18.1 and the minimum supported version is 1.21. It works, but maybe the go version should be updated.~~

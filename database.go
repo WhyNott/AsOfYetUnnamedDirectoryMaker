@@ -50,6 +50,41 @@ func (app *App) handleGetDirectory(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (app *App) handleGetColumns(w http.ResponseWriter, r *http.Request) {
+	var columnsJSON string
+	err := app.DB.QueryRow("SELECT columns FROM directory_columns WHERE id = 1").Scan(&columnsJSON)
+	if err != nil {
+		log.Printf("Failed to query columns: %v", err)
+		// Return default columns if none found
+		defaultColumns := []string{"Column 1", "Column 2", "Column 3"}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		json.NewEncoder(w).Encode(defaultColumns)
+		return
+	}
+
+	var columns []string
+	if err := json.Unmarshal([]byte(columnsJSON), &columns); err != nil {
+		log.Printf("Failed to unmarshal columns: %v", err)
+		defaultColumns := []string{"Column 1", "Column 2", "Column 3"}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		json.NewEncoder(w).Encode(defaultColumns)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+
+	if err := json.NewEncoder(w).Encode(columns); err != nil {
+		log.Printf("Failed to encode columns: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
 func (app *App) handleDownloadDB(w http.ResponseWriter, r *http.Request) {
 	file, err := os.Open(app.Config.DatabasePath)
 	if err != nil {
@@ -71,13 +106,17 @@ func (app *App) handleDownloadDB(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) handleHome(w http.ResponseWriter, r *http.Request) {
-	// Try to get CSRF token from session if user is authenticated
+	// Try to get user info and CSRF token from session if user is authenticated
 	var csrfToken string
+	var userEmail string
+	var isAuthenticated bool
 	if session, err := app.SessionStore.Get(r, "auth-session"); err == nil {
 		if sessionDataJSON, ok := session.Values["session_data"].(string); ok {
 			var sessionData SessionData
 			if json.Unmarshal([]byte(sessionDataJSON), &sessionData) == nil {
 				csrfToken = sessionData.CSRFToken
+				userEmail = sessionData.UserEmail
+				isAuthenticated = sessionData.Authenticated
 			}
 		}
 	}
@@ -244,8 +283,16 @@ func (app *App) handleHome(w http.ResponseWriter, r *http.Request) {
         <div class="header">
             <h1>Community Directory</h1>
             <div>
+                {{if .IsAuthenticated}}
+                    <span style="margin-right: 15px; color: #666;">Logged in as: <strong>{{.UserEmail}}</strong></span>
+                    <a href="/logout" class="admin-btn" style="background: #dc3545;">Logout</a>
+                {{else}}
+                    <a href="/login" class="admin-btn">Login</a>
+                {{end}}
                 <a href="/download/directory.db" class="download-btn">Download Database</a>
-                <a href="/admin" class="admin-btn">Admin Panel</a>
+                {{if .IsAuthenticated}}
+                    <a href="/admin" class="admin-btn">Admin Panel</a>
+                {{end}}
             </div>
         </div>
         
@@ -320,8 +367,14 @@ func (app *App) handleHome(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := struct {
-		CSRFToken string
-	}{CSRFToken: csrfToken}
+		CSRFToken       string
+		UserEmail       string
+		IsAuthenticated bool
+	}{
+		CSRFToken:       csrfToken,
+		UserEmail:       userEmail,
+		IsAuthenticated: isAuthenticated,
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.Execute(w, data); err != nil {
