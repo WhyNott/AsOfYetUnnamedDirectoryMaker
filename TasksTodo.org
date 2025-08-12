@@ -1,8 +1,24 @@
-* Bugs
+* Bugs (COMPLETED)
 - ~~When logging out as admin, the logout/login flow doesn't function properly. When I log out and then press the log in button again, I don't get taken to the google login page like I might expect to (to choose an account to log in as), instead I am logged in as my previous email automatically.~~
   - ~~It might also be good to show who the user is logged in as on the main page.~~
 - ~~When the import is successful, it currently redirects to an empty page (admin?imported=true). This should be changed to something nicer.~~
 - ~~When the sheet is imported the column names are displayed correctly, but when they are shown to the user later they just show up as "Column 1", "Column 2", etc. in the frontend.~~
   
-* Misc improvements
+* Misc improvements (COMPLETED)
 - ~~When I attach a debugger, it complains that it uses go 1.18.1 and the minimum supported version is 1.21. It works, but maybe the go version should be updated.~~
+
+* MAJOR FEATURE: Multi-Directory Platform Support
+** Overview: Transform platform to support multiple directories with separate admin users and database files
+- [x] 1. Database schema redesign - Add directories and directory_owners tables to private DB
+- [x] 2. Update authentication system to support directory-specific access control
+- [x] 3. Implement directory URL routing (parameter-based as stopgap for wildcard domains)
+- [x] 4. Create super-admin panel to manage all directories and their owners
+  - [ ] BUG: Super admin template execution error - Go template parser issue with JavaScript context
+- [ ] 5. Modify directory database handling to support multiple .db files
+- [ ] 6. Update import/export functionality to work with directory-specific databases
+- [ ] 7. Update frontend to be directory-aware (show current directory, proper branding)
+- [ ] 8. Add directory creation/management interface
+- [ ] 9. Update session handling for directory-specific authentication
+- [ ] 10. Add directory selection/switching functionality for users with multiple directories
+- [ ] 11. Update API endpoints to be directory-aware
+- [ ] 12. Add proper error handling for directory not found scenarios

@@ -9,7 +9,18 @@ import (
 )
 
 func (app *App) handleGetDirectory(w http.ResponseWriter, r *http.Request) {
-	rows, err := app.DB.Query("SELECT id, data FROM directory ORDER BY id")
+	// Get directory ID from query parameter or default to "default"
+	directoryID := GetCurrentDirectoryID(r)
+	
+	// Get directory-specific database connection
+	db, err := app.DirectoryDBManager.GetDirectoryDB(directoryID)
+	if err != nil {
+		log.Printf("Failed to get directory database for %s: %v", directoryID, err)
+		http.Error(w, "Directory not found", http.StatusNotFound)
+		return
+	}
+	
+	rows, err := db.Query("SELECT id, data FROM directory ORDER BY id")
 	if err != nil {
 		log.Printf("Failed to query directory: %v", err)
 		http.Error(w, "Failed to query directory", http.StatusInternalServerError)
@@ -51,8 +62,19 @@ func (app *App) handleGetDirectory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) handleGetColumns(w http.ResponseWriter, r *http.Request) {
+	// Get directory ID from query parameter or default to "default"
+	directoryID := GetCurrentDirectoryID(r)
+	
+	// Get directory-specific database connection
+	db, err := app.DirectoryDBManager.GetDirectoryDB(directoryID)
+	if err != nil {
+		log.Printf("Failed to get directory database for %s: %v", directoryID, err)
+		http.Error(w, "Directory not found", http.StatusNotFound)
+		return
+	}
+	
 	var columnsJSON string
-	err := app.DB.QueryRow("SELECT columns FROM directory_columns WHERE id = 1").Scan(&columnsJSON)
+	err = db.QueryRow("SELECT columns FROM directory_columns WHERE id = 1").Scan(&columnsJSON)
 	if err != nil {
 		log.Printf("Failed to query columns: %v", err)
 		// Return default columns if none found
@@ -86,7 +108,18 @@ func (app *App) handleGetColumns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) handleDownloadDB(w http.ResponseWriter, r *http.Request) {
-	file, err := os.Open(app.Config.DatabasePath)
+	// Get directory ID from query parameter or default to "default"
+	directoryID := GetCurrentDirectoryID(r)
+	
+	// Get directory info to find the database path
+	directory, err := app.GetDirectory(directoryID)
+	if err != nil {
+		log.Printf("Directory %s not found: %v", directoryID, err)
+		http.Error(w, "Directory not found", http.StatusNotFound)
+		return
+	}
+	
+	file, err := os.Open(directory.DatabasePath)
 	if err != nil {
 		log.Printf("Failed to open database file for download: %v", err)
 		http.Error(w, "Database file not found", http.StatusNotFound)
@@ -99,17 +132,30 @@ func (app *App) handleDownloadDB(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", "attachment; filename=directory.db")
+	w.Header().Set("Content-Disposition", "attachment; filename="+directoryID+".db")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 
-	http.ServeFile(w, r, app.Config.DatabasePath)
+	http.ServeFile(w, r, directory.DatabasePath)
 }
 
 func (app *App) handleHome(w http.ResponseWriter, r *http.Request) {
+	// Get directory ID from query parameter or default to "default"
+	directoryID := GetCurrentDirectoryID(r)
+	
+	// Get directory information
+	directory, err := app.GetDirectory(directoryID)
+	if err != nil {
+		log.Printf("Directory %s not found: %v", directoryID, err)
+		http.Error(w, "Directory not found", http.StatusNotFound)
+		return
+	}
+	
 	// Try to get user info and CSRF token from session if user is authenticated
 	var csrfToken string
 	var userEmail string
 	var isAuthenticated bool
+	var isSuperAdmin bool
+	var isDirectoryOwner bool
 	if session, err := app.SessionStore.Get(r, "auth-session"); err == nil {
 		if sessionDataJSON, ok := session.Values["session_data"].(string); ok {
 			var sessionData SessionData
@@ -117,6 +163,12 @@ func (app *App) handleHome(w http.ResponseWriter, r *http.Request) {
 				csrfToken = sessionData.CSRFToken
 				userEmail = sessionData.UserEmail
 				isAuthenticated = sessionData.Authenticated
+				
+				// Check if user is super admin
+				if isAuthenticated {
+					isSuperAdmin, _ = app.IsSuperAdmin(userEmail)
+					isDirectoryOwner, _ = app.IsDirectoryOwner(directoryID, userEmail)
+				}
 			}
 		}
 	}
@@ -281,22 +333,41 @@ func (app *App) handleHome(w http.ResponseWriter, r *http.Request) {
 <body>
     <div class="container">
         <div class="header">
-            <h1>Community Directory</h1>
+            <div>
+                <h1>{{.Directory.Name}}</h1>
+                <div style="font-size: 14px; color: #666; margin-top: 5px;">
+                    Directory: <strong>{{.Directory.ID}}</strong>
+                    {{if .Directory.Description}} • {{.Directory.Description}}{{end}}
+                </div>
+            </div>
             <div>
                 {{if .IsAuthenticated}}
-                    <span style="margin-right: 15px; color: #666;">Logged in as: <strong>{{.UserEmail}}</strong></span>
+                    <span style="margin-right: 15px; color: #666;">Logged in as: <strong>{{.UserEmail}}</strong>
+                        {{if .IsSuperAdmin}}<span style="background: #dc3545; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px;">SUPER ADMIN</span>{{end}}
+                        {{if .IsDirectoryOwner}}<span style="background: #28a745; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px;">OWNER</span>{{end}}
+                    </span>
                     <a href="/logout" class="admin-btn" style="background: #dc3545;">Logout</a>
                 {{else}}
                     <a href="/login" class="admin-btn">Login</a>
                 {{end}}
-                <a href="/download/directory.db" class="download-btn">Download Database</a>
+                <a href="{{.DownloadURL}}" class="download-btn">Download Database</a>
                 {{if .IsAuthenticated}}
-                    <a href="/admin" class="admin-btn">Admin Panel</a>
+                    {{if or .IsDirectoryOwner .IsSuperAdmin}}
+                        <a href="{{.AdminURL}}" class="admin-btn">Admin Panel</a>
+                    {{end}}
+                    {{if .IsSuperAdmin}}
+                        <a href="/super-admin" class="admin-btn" style="background: #dc3545;">Super Admin</a>
+                    {{end}}
                 {{end}}
             </div>
         </div>
         
         <div class="controls">
+            {{if .IsAuthenticated}}
+                <select id="directorySelector" class="search-box" style="width: 200px; margin-right: 10px;">
+                    <option value="">Loading directories...</option>
+                </select>
+            {{end}}
             <input type="text" id="searchBox" class="search-box" placeholder="Search directory...">
             <button id="addRowBtn" class="add-row-btn">Add New Row</button>
             <span id="recordCount"></span>
@@ -366,20 +437,61 @@ func (app *App) handleHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Build directory-aware URLs
+	downloadURL := "/download/directory.db"
+	adminURL := "/admin"
+	if directoryID != "default" {
+		downloadURL += "?dir=" + directoryID
+		adminURL += "?dir=" + directoryID
+	}
+
 	data := struct {
-		CSRFToken       string
-		UserEmail       string
-		IsAuthenticated bool
+		CSRFToken         string
+		UserEmail         string
+		IsAuthenticated   bool
+		IsSuperAdmin      bool
+		IsDirectoryOwner  bool
+		Directory         *Directory
+		DownloadURL       string
+		AdminURL          string
 	}{
-		CSRFToken:       csrfToken,
-		UserEmail:       userEmail,
-		IsAuthenticated: isAuthenticated,
+		CSRFToken:        csrfToken,
+		UserEmail:        userEmail,
+		IsAuthenticated:  isAuthenticated,
+		IsSuperAdmin:     isSuperAdmin,
+		IsDirectoryOwner: isDirectoryOwner,
+		Directory:        directory,
+		DownloadURL:      downloadURL,
+		AdminURL:         adminURL,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.Execute(w, data); err != nil {
 		log.Printf("Failed to execute home template: %v", err)
 		http.Error(w, "Template execution error", http.StatusInternalServerError)
+		return
+	}
+}
+
+// handleGetUserDirectories returns all directories a user has access to
+func (app *App) handleGetUserDirectories(w http.ResponseWriter, r *http.Request) {
+	userEmail, ok := r.Context().Value(UserEmailKey).(string)
+	if !ok {
+		http.Error(w, "User not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	directories, err := app.GetUserDirectories(userEmail)
+	if err != nil {
+		log.Printf("Failed to get user directories for %s: %v", userEmail, err)
+		http.Error(w, "Failed to get directories", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(directories); err != nil {
+		log.Printf("Failed to encode directories: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
 }

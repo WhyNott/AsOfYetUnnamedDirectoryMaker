@@ -188,10 +188,18 @@ func (app *App) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Encrypt the token before storing
+	encryptedToken, err := app.EncryptionService.Encrypt(string(tokenJSON))
+	if err != nil {
+		log.Printf("Failed to encrypt token: %v", err)
+		http.Error(w, "Token encryption error", http.StatusInternalServerError)
+		return
+	}
+
 	_, err = app.DB.Exec(`
 		INSERT OR REPLACE INTO admin_sessions (user_email, token) 
 		VALUES (?, ?)
-	`, userInfo.Email, string(tokenJSON))
+	`, userInfo.Email, encryptedToken)
 
 	if err != nil {
 		log.Printf("Failed to save admin session to database: %v", err)
@@ -250,6 +258,38 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get directory ID from query parameter or default to "default"
+	directoryID := GetCurrentDirectoryID(r)
+	
+	// Get directory information
+	directory, err := app.GetDirectory(directoryID)
+	if err != nil {
+		log.Printf("Directory %s not found: %v", directoryID, err)
+		http.Error(w, "Directory not found", http.StatusNotFound)
+		return
+	}
+	
+	// Check if user has access to this directory
+	isOwner, err := app.IsDirectoryOwner(directoryID, userEmail)
+	if err != nil {
+		log.Printf("Failed to check directory ownership: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	
+	isSuperAdmin, err := app.IsSuperAdmin(userEmail)
+	if err != nil {
+		log.Printf("Failed to check super admin status: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	
+	if !isOwner && !isSuperAdmin {
+		log.Printf("User %s does not have access to directory %s", userEmail, directoryID)
+		http.Error(w, "Access denied", http.StatusForbidden)
+		return
+	}
+
 	// Check if import was successful
 	importSuccess := r.URL.Query().Get("imported") == "true"
 	log.Printf("Import success flag: %v", importSuccess)
@@ -269,17 +309,22 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 </head>
 <body>
     <div class="container">
-        <h1>Admin Panel</h1>
-        <p>Welcome, {{.UserEmail}}</p>
+        <h1>Admin Panel - {{.Directory.Name}}</h1>
+        <div style="margin-bottom: 20px; color: #666;">
+            <p>Welcome, {{.UserEmail}}</p>
+            <p>Managing directory: <strong>{{.Directory.ID}}</strong>
+            {{if .Directory.Description}} ({{.Directory.Description}}){{end}}
+            </p>
+        </div>
         
         {{if .ImportSuccess}}
         <div style="background: #d4edda; color: #155724; padding: 15px; border: 1px solid #c3e6cb; border-radius: 4px; margin-bottom: 20px;">
             <strong>✅ Import Successful!</strong> The Google Sheet has been successfully imported into the directory.
-            <a href="/" style="color: #155724; text-decoration: underline; margin-left: 10px;">View Directory</a>
+            <a href="{{.ViewDirectoryURL}}" style="color: #155724; text-decoration: underline; margin-left: 10px;">View Directory</a>
         </div>
         {{end}}
         
-        <form action="/import" method="POST" id="importForm">
+        <form action="{{.ImportURL}}" method="POST" id="importForm">
             <h2>Import Google Sheet</h2>
             <p>Enter the URL of your Google Sheet:</p>
             <input type="url" name="sheet_url" id="sheet_url" placeholder="https://docs.google.com/spreadsheets/d/..." required>
@@ -299,11 +344,13 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
         </div>
         
         <hr>
-        <p><a href="/">View Directory</a> | <a href="/logout">Logout</a></p>
+        <p><a href="{{.ViewDirectoryURL}}">View Directory</a> | <a href="/logout">Logout</a></p>
     </div>
     
     <script>
     let csrfToken = '{{.CSRFToken}}';
+    let previewURL = '{{.PreviewURL}}';
+    let importURL = '{{.ImportURL}}';
     
     document.getElementById('previewBtn').addEventListener('click', async function() {
         const sheetUrl = document.getElementById('sheet_url').value;
@@ -317,7 +364,7 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
         this.disabled = true;
         
         try {
-            const response = await fetch('/api/preview-sheet', {
+            const response = await fetch(previewURL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -350,7 +397,7 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
         const formData = new FormData(form);
         
         try {
-            const response = await fetch('/import', {
+            const response = await fetch(importURL, {
                 method: 'POST',
                 body: formData,
                 credentials: 'same-origin'
@@ -361,7 +408,7 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
                 window.location.href = response.url;
             } else if (response.ok) {
                 // If no redirect but successful, go to admin with success
-                window.location.href = '/admin?imported=true';
+                window.location.href = '{{.AdminURL}}&imported=true';
             } else {
                 alert('Import failed: ' + await response.text());
             }
@@ -417,14 +464,36 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Build directory-aware URLs
+	viewDirectoryURL := "/"
+	importURL := "/import"
+	previewURL := "/api/preview-sheet"
+	adminURL := "/admin"
+	if directoryID != "default" {
+		viewDirectoryURL += "?dir=" + directoryID
+		importURL += "?dir=" + directoryID
+		previewURL += "?dir=" + directoryID
+		adminURL += "?dir=" + directoryID
+	}
+
 	data := struct {
-		UserEmail     string
-		CSRFToken     string
-		ImportSuccess bool
+		UserEmail        string
+		CSRFToken        string
+		ImportSuccess    bool
+		Directory        *Directory
+		ViewDirectoryURL string
+		ImportURL        string
+		PreviewURL       string
+		AdminURL         string
 	}{
-		UserEmail:     userEmail,
-		CSRFToken:     csrfToken,
-		ImportSuccess: importSuccess,
+		UserEmail:        userEmail,
+		CSRFToken:        csrfToken,
+		ImportSuccess:    importSuccess,
+		Directory:        directory,
+		ViewDirectoryURL: viewDirectoryURL,
+		ImportURL:        importURL,
+		PreviewURL:       previewURL,
+		AdminURL:         adminURL,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

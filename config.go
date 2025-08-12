@@ -23,6 +23,7 @@ type Config struct {
 	SessionMaxAge      int
 	LogLevel           string
 	Environment        string
+	EncryptionKey      []byte
 }
 
 func LoadConfig() (*Config, error) {
@@ -65,6 +66,22 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("invalid SESSION_MAX_AGE: %v", err)
 	}
 	config.SessionMaxAge = maxAge
+
+	// Load encryption key for token encryption
+	encryptionKey := os.Getenv("ENCRYPTION_KEY")
+	if encryptionKey == "" {
+		return nil, fmt.Errorf("ENCRYPTION_KEY environment variable is required")
+	}
+	
+	if len(encryptionKey) != 64 { // 32 bytes in hex = 64 characters
+		return nil, fmt.Errorf("ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)")
+	}
+	
+	keyBytes, err := hex.DecodeString(encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("ENCRYPTION_KEY must be valid hex: %v", err)
+	}
+	config.EncryptionKey = keyBytes
 
 	return config, nil
 }

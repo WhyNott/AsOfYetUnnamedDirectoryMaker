@@ -39,9 +39,20 @@ func (app *App) handleCorrection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get directory ID from query parameter or default to "default"
+	directoryID := GetCurrentDirectoryID(r)
+	
+	// Get directory-specific database connection
+	db, err := app.DirectoryDBManager.GetDirectoryDB(directoryID)
+	if err != nil {
+		log.Printf("Failed to get directory database for %s: %v", directoryID, err)
+		http.Error(w, "Directory not found", http.StatusNotFound)
+		return
+	}
+
 	// Get the current data for the specified row
 	var currentData string
-	err := app.DB.QueryRow("SELECT data FROM directory ORDER BY id LIMIT 1 OFFSET ?", correction.Row).Scan(&currentData)
+	err = db.QueryRow("SELECT data FROM directory ORDER BY id LIMIT 1 OFFSET ?", correction.Row).Scan(&currentData)
 	if err != nil {
 		log.Printf("Failed to get row %d: %v", correction.Row, err)
 		http.Error(w, "Row not found", http.StatusNotFound)
@@ -79,7 +90,7 @@ func (app *App) handleCorrection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = app.DB.Exec(`
+	_, err = db.Exec(`
 		UPDATE directory 
 		SET data = ? 
 		WHERE id = (
@@ -97,23 +108,23 @@ func (app *App) handleCorrection(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	go func() {
 		defer cancel()
-		app.updateOriginalSheet(ctx, correction.Row, correction.Column, correction.Value)
+		app.updateOriginalSheet(ctx, correction.Row, correction.Column, correction.Value, directoryID)
 	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
-func (app *App) updateOriginalSheet(ctx context.Context, row, col int, value string) {
+func (app *App) updateOriginalSheet(ctx context.Context, row, col int, value string, directoryID string) {
 	// Get the latest admin session with a sheet URL
-	var userEmail, tokenJSON, sheetURL string
+	var userEmail, encryptedTokenJSON, sheetURL string
 	err := app.DB.QueryRow(`
 		SELECT user_email, token, sheet_url 
 		FROM admin_sessions 
 		WHERE sheet_url IS NOT NULL AND sheet_url != ''
 		ORDER BY created_at DESC 
 		LIMIT 1
-	`).Scan(&userEmail, &tokenJSON, &sheetURL)
+	`).Scan(&userEmail, &encryptedTokenJSON, &sheetURL)
 
 	select {
 	case <-ctx.Done():
@@ -133,6 +144,13 @@ func (app *App) updateOriginalSheet(ctx context.Context, row, col int, value str
 		return
 	}
 
+	// Decrypt the token
+	tokenJSON, err := app.EncryptionService.Decrypt(encryptedTokenJSON)
+	if err != nil {
+		fmt.Printf("Failed to decrypt token: %v\n", err)
+		return
+	}
+
 	var token oauth2.Token
 	if err := json.Unmarshal([]byte(tokenJSON), &token); err != nil {
 		fmt.Printf("Failed to unmarshal token: %v\n", err)
@@ -148,7 +166,7 @@ func (app *App) updateOriginalSheet(ctx context.Context, row, col int, value str
 	fmt.Printf("Successfully updated sheet cell at row %d, column %d with value: %s\n", row, col, value)
 
 	// Re-import the sheet to refresh our database
-	if err := app.importFromSheet(ctx, spreadsheetID, &token); err != nil {
+	if err := app.importFromSheet(ctx, spreadsheetID, &token, directoryID); err != nil {
 		fmt.Printf("Failed to re-import sheet after update: %v\n", err)
 	} else {
 		fmt.Println("Successfully re-imported sheet data")

@@ -18,17 +18,41 @@ const (
 	UserEmailKey     contextKey = "user_email"
 	CSRFTokenKey     contextKey = "csrf_token"
 	AuthenticatedKey contextKey = "authenticated"
+	DirectoryIDKey   contextKey = "directory_id"
+	IsSuperAdminKey  contextKey = "is_super_admin"
 )
 
 func (app *App) LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		next.ServeHTTP(w, r)
+		// Create a response writer wrapper to capture status code
+		wrapper := &responseWriterWrapper{ResponseWriter: w, statusCode: 200}
+		
+		next.ServeHTTP(wrapper, r)
 
 		duration := time.Since(start)
-		log.Printf("%s %s %v", r.Method, r.URL.Path, duration)
+		
+		AppLogger.WithFields(map[string]interface{}{
+			"method":      r.Method,
+			"path":        r.URL.Path,
+			"duration_ms": duration.Milliseconds(),
+			"status_code": wrapper.statusCode,
+			"remote_addr": r.RemoteAddr,
+			"user_agent":  r.UserAgent(),
+		}).Info("HTTP request completed")
 	})
+}
+
+// responseWriterWrapper wraps http.ResponseWriter to capture status code
+type responseWriterWrapper struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (w *responseWriterWrapper) WriteHeader(statusCode int) {
+	w.statusCode = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
 }
 
 func (app *App) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -79,6 +103,97 @@ func (app *App) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		ctx = context.WithValue(ctx, CSRFTokenKey, sessionData.CSRFToken)
 		ctx = context.WithValue(ctx, AuthenticatedKey, true)
 
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}
+}
+
+// DirectoryAuthMiddleware checks if user has access to a specific directory
+func (app *App) DirectoryAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Get user email from context (set by AuthMiddleware)
+		userEmail, ok := r.Context().Value(UserEmailKey).(string)
+		if !ok {
+			http.Error(w, "User not authenticated", http.StatusUnauthorized)
+			return
+		}
+
+		// Extract directory ID from URL parameter
+		directoryID := r.URL.Query().Get("dir")
+		if directoryID == "" {
+			// For now, default to "default" directory for backward compatibility
+			directoryID = "default"
+		}
+
+		// Check if user is super admin
+		isSuperAdmin, err := app.IsSuperAdmin(userEmail)
+		if err != nil {
+			log.Printf("Error checking super admin status: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		// If not super admin, check directory ownership
+		if !isSuperAdmin {
+			hasAccess, err := app.IsDirectoryOwner(directoryID, userEmail)
+			if err != nil {
+				log.Printf("Error checking directory ownership: %v", err)
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
+			}
+			if !hasAccess {
+				http.Error(w, "Access denied - you don't have permission to access this directory", http.StatusForbidden)
+				return
+			}
+		}
+
+		// Verify directory exists
+		directory, err := app.GetDirectory(directoryID)
+		if err != nil {
+			if err.Error() == "directory not found" {
+				http.Error(w, "Directory not found", http.StatusNotFound)
+				return
+			}
+			log.Printf("Error getting directory: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		// Add directory info to context
+		ctx := context.WithValue(r.Context(), DirectoryIDKey, directoryID)
+		ctx = context.WithValue(ctx, IsSuperAdminKey, isSuperAdmin)
+
+		log.Printf("Directory access granted: user=%s, directory=%s, super_admin=%v", userEmail, directoryID, isSuperAdmin)
+
+		// Store directory in request for handlers to use
+		r.Header.Set("X-Directory-ID", directory.ID)
+		r.Header.Set("X-Directory-Path", directory.DatabasePath)
+
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}
+}
+
+// SuperAdminMiddleware requires super admin privileges
+func (app *App) SuperAdminMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userEmail, ok := r.Context().Value(UserEmailKey).(string)
+		if !ok {
+			http.Error(w, "User not authenticated", http.StatusUnauthorized)
+			return
+		}
+
+		isSuperAdmin, err := app.IsSuperAdmin(userEmail)
+		if err != nil {
+			log.Printf("Error checking super admin status: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		if !isSuperAdmin {
+			http.Error(w, "Access denied - super admin privileges required", http.StatusForbidden)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), IsSuperAdminKey, true)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }
@@ -163,7 +278,12 @@ func (app *App) RecoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Printf("Panic recovered: %v", err)
+				AppLogger.WithFields(map[string]interface{}{
+					"method":     r.Method,
+					"path":       r.URL.Path,
+					"panic":      fmt.Sprintf("%v", err),
+					"remote_addr": r.RemoteAddr,
+				}).Error("Panic recovered in HTTP handler")
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
 			}
 		}()

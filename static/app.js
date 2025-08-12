@@ -6,6 +6,22 @@ let currentCol = -1;
 let maxColumns = 0;
 let csrfToken = null;
 let deleteRowIndex = -1;
+let currentDirectoryID = 'default';
+
+// Get directory ID from URL parameters
+function getCurrentDirectoryID() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('dir') || 'default';
+}
+
+// Build URL with directory parameter
+function buildAPIURL(path) {
+    const url = new URL(path, window.location.origin);
+    if (currentDirectoryID !== 'default') {
+        url.searchParams.set('dir', currentDirectoryID);
+    }
+    return url.toString();
+}
 
 // Get CSRF token from meta tag if available
 function getCSRFToken() {
@@ -16,13 +32,15 @@ function getCSRFToken() {
     return null;
 }
 
-// Initialize CSRF token
+// Initialize CSRF token and directory ID
 csrfToken = getCSRFToken();
+currentDirectoryID = getCurrentDirectoryID();
 
 // Initialize SQL.js and load the database
 initSqlJs({
     locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
 }).then(function(SQL){
+    loadUserDirectories();
     loadDirectory();
 });
 
@@ -31,13 +49,15 @@ async function loadDirectory() {
         // Load column names first
         await loadColumnNames();
         
-        const response = await fetch('/download/directory.db', {
+        const response = await fetch(buildAPIURL('/download/directory.db'), {
             method: 'GET',
             credentials: 'same-origin'
         });
         if (!response.ok) {
             if (response.status === 401 || response.status === 403) {
                 document.getElementById('loading').textContent = 'Access denied. Please login to view the directory.';
+            } else if (response.status === 404) {
+                document.getElementById('loading').textContent = 'Directory not found. Please check the URL or contact the administrator.';
             } else {
                 document.getElementById('loading').textContent = 'No directory data available yet. Please check with the administrator.';
             }
@@ -64,7 +84,7 @@ async function loadDirectory() {
 
 async function loadColumnNames() {
     try {
-        const response = await fetch('/api/columns', {
+        const response = await fetch(buildAPIURL('/api/columns'), {
             method: 'GET',
             credentials: 'same-origin'
         });
@@ -237,7 +257,7 @@ document.getElementById('submitCorrection').addEventListener('click', async func
             headers['X-CSRF-Token'] = csrfToken;
         }
         
-        const response = await fetch('/api/corrections', {
+        const response = await fetch(buildAPIURL('/api/corrections'), {
             method: 'POST',
             headers: headers,
             credentials: 'same-origin',
@@ -374,7 +394,7 @@ document.getElementById('submitNewRow').addEventListener('click', async function
             headers['X-CSRF-Token'] = csrfToken;
         }
         
-        const response = await fetch('/api/add-row', {
+        const response = await fetch(buildAPIURL('/api/add-row'), {
             method: 'POST',
             headers: headers,
             credentials: 'same-origin',
@@ -555,7 +575,7 @@ document.getElementById('confirmDelete').addEventListener('click', async functio
             headers['X-CSRF-Token'] = csrfToken;
         }
         
-        const response = await fetch('/api/delete-row', {
+        const response = await fetch(buildAPIURL('/api/delete-row'), {
             method: 'DELETE',
             headers: headers,
             credentials: 'same-origin',
@@ -611,5 +631,76 @@ window.addEventListener('click', function(event) {
 document.getElementById('deleteReason').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') {
         document.getElementById('confirmDelete').click();
+    }
+});
+
+// Load user directories for the directory selector
+async function loadUserDirectories() {
+    const directorySelector = document.getElementById('directorySelector');
+    if (!directorySelector) {
+        // Not authenticated or selector not present
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/user-directories', {
+            method: 'GET',
+            credentials: 'same-origin'
+        });
+        
+        if (response.ok) {
+            const directories = await response.json();
+            
+            // Clear existing options
+            directorySelector.innerHTML = '';
+            
+            // Add options for each directory
+            directories.forEach(function(directory) {
+                const option = document.createElement('option');
+                option.value = directory.id;
+                option.textContent = directory.name + ' (' + directory.id + ')';
+                
+                // Select current directory
+                if (directory.id === currentDirectoryID) {
+                    option.selected = true;
+                }
+                
+                directorySelector.appendChild(option);
+            });
+            
+            // Only show selector if user has multiple directories
+            if (directories.length > 1) {
+                directorySelector.style.display = 'inline-block';
+            } else {
+                directorySelector.style.display = 'none';
+            }
+            
+        } else {
+            // Hide selector on error
+            directorySelector.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Error loading user directories:', error);
+        directorySelector.style.display = 'none';
+    }
+}
+
+// Handle directory selection change
+document.addEventListener('DOMContentLoaded', function() {
+    const directorySelector = document.getElementById('directorySelector');
+    if (directorySelector) {
+        directorySelector.addEventListener('change', function() {
+            const selectedDirectoryID = this.value;
+            if (selectedDirectoryID && selectedDirectoryID !== currentDirectoryID) {
+                // Redirect to the selected directory
+                const url = new URL(window.location);
+                if (selectedDirectoryID === 'default') {
+                    url.searchParams.delete('dir');
+                } else {
+                    url.searchParams.set('dir', selectedDirectoryID);
+                }
+                window.location.href = url.toString();
+            }
+        });
     }
 });

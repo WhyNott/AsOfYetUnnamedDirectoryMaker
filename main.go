@@ -2,9 +2,9 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -15,10 +15,13 @@ import (
 )
 
 type App struct {
-	DB           *sql.DB
-	SessionStore *sessions.CookieStore
-	OAuthConfig  *oauth2.Config
-	Config       *Config
+	DB                  *sql.DB
+	SessionStore        *sessions.CookieStore
+	OAuthConfig         *oauth2.Config
+	Config              *Config
+	EncryptionService   *EncryptionService
+	DirectoryDBManager  *DirectoryDatabaseManager
+	PermissionCache     *PermissionCache
 }
 
 type DirectoryEntry struct {
@@ -57,6 +60,9 @@ func main() {
 		log.Fatal("Failed to load configuration:", err)
 	}
 
+	// Initialize structured logging
+	InitializeLogger(config)
+
 	sessionStore := sessions.NewCookieStore(config.SessionSecret)
 	sessionStore.MaxAge(config.SessionMaxAge)
 	sessionStore.Options = &sessions.Options{
@@ -67,11 +73,16 @@ func main() {
 		SameSite: http.SameSiteLaxMode, // Changed to Lax to allow OAuth redirects
 	}
 
-	log.Printf("Session store configured with MaxAge: %d, Secure: %v", config.SessionMaxAge, config.Environment == "production")
+	AppLogger.WithFields(map[string]interface{}{
+		"max_age": config.SessionMaxAge,
+		"secure":  config.Environment == "production",
+		"environment": config.Environment,
+	}).Info("Session store configured")
 
 	app := &App{
-		Config:       config,
-		SessionStore: sessionStore,
+		Config:            config,
+		SessionStore:      sessionStore,
+		EncryptionService: NewEncryptionService(config.EncryptionKey),
 		OAuthConfig: &oauth2.Config{
 			ClientID:     config.GoogleClientID,
 			ClientSecret: config.GoogleClientSecret,
@@ -98,10 +109,15 @@ func main() {
 		log.Fatal("Failed to initialize database:", err)
 	}
 
+	// Initialize directory database manager and permission cache
+	app.DirectoryDBManager = NewDirectoryDatabaseManager(app)
+	app.PermissionCache = NewPermissionCache()
+
 	r := mux.NewRouter()
 
 	r.Use(app.RecoveryMiddleware)
 	r.Use(app.LoggingMiddleware)
+	r.Use(app.SpecialRateLimitMiddleware())
 
 	r.HandleFunc("/", app.handleHome).Methods("GET")
 	//r.HandleFunc("/test", app.handleTest).Methods("GET")                // Simple test endpoint
@@ -114,15 +130,24 @@ func main() {
 	r.HandleFunc("/api/preview-sheet", app.AuthMiddleware(app.CSRFMiddleware(app.handlePreviewSheet))).Methods("POST")
 	r.HandleFunc("/api/directory", app.handleGetDirectory).Methods("GET")
 	r.HandleFunc("/api/columns", app.handleGetColumns).Methods("GET")
+	r.HandleFunc("/api/user-directories", app.AuthMiddleware(app.handleGetUserDirectories)).Methods("GET")
 	r.HandleFunc("/api/corrections", app.AuthMiddleware(app.CSRFMiddleware(app.handleCorrection))).Methods("POST")
 	r.HandleFunc("/api/add-row", app.AuthMiddleware(app.CSRFMiddleware(app.handleAddRow))).Methods("POST")
 	r.HandleFunc("/api/delete-row", app.AuthMiddleware(app.CSRFMiddleware(app.handleDeleteRow))).Methods("DELETE")
 	r.HandleFunc("/download/directory.db", app.handleDownloadDB).Methods("GET")
+	
+	// Super admin routes
+	r.HandleFunc("/super-admin", app.AuthMiddleware(app.SuperAdminMiddleware(app.handleSuperAdmin))).Methods("GET")
+	r.HandleFunc("/api/super-admin/directories", app.AuthMiddleware(app.SuperAdminMiddleware(app.handleGetAllDirectories))).Methods("GET")
+	r.HandleFunc("/api/super-admin/create-directory", app.AuthMiddleware(app.SuperAdminMiddleware(app.CSRFMiddleware(app.handleCreateDirectory)))).Methods("POST")
+	r.HandleFunc("/api/super-admin/delete-directory", app.AuthMiddleware(app.SuperAdminMiddleware(app.CSRFMiddleware(app.handleDeleteDirectory)))).Methods("DELETE")
 
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
 
-	fmt.Printf("Server starting on :%s\n", config.Port)
-	log.Fatal(http.ListenAndServe(":"+config.Port, r))
+	AppLogger.WithField("port", config.Port).Info("Server starting")
+	if err := http.ListenAndServe(":"+config.Port, r); err != nil {
+		AppLogger.WithError(err).Fatal("Server failed to start")
+	}
 }
 
 func (app *App) initDatabase() error {
@@ -132,21 +157,52 @@ func (app *App) initDatabase() error {
 			data TEXT NOT NULL
 		);
 		
-		CREATE TABLE IF NOT EXISTS directory_columns (
-			id INTEGER PRIMARY KEY,
-			columns TEXT NOT NULL
-		);
-		
 		CREATE TABLE IF NOT EXISTS admin_sessions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_email TEXT NOT NULL,
 			sheet_url TEXT,
 			token TEXT,
+			directory_id TEXT DEFAULT 'default',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		
+		CREATE TABLE IF NOT EXISTS directories (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT,
+			database_path TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		
+		CREATE TABLE IF NOT EXISTS directory_owners (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			directory_id TEXT NOT NULL,
+			user_email TEXT NOT NULL,
+			role TEXT NOT NULL DEFAULT 'owner',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (directory_id) REFERENCES directories(id)
+		);
+		
+		CREATE TABLE IF NOT EXISTS super_admins (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_email TEXT NOT NULL UNIQUE,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 	`
-	_, err := app.DB.Exec(query)
-	return err
+	if _, err := app.DB.Exec(query); err != nil {
+		return err
+	}
+
+	// Add directory_id column to admin_sessions if it doesn't exist (migration)
+	_, err := app.DB.Exec(`ALTER TABLE admin_sessions ADD COLUMN directory_id TEXT DEFAULT 'default'`)
+	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		log.Printf("Note: Could not add directory_id column to admin_sessions: %v", err)
+		// This is not a fatal error, column might already exist
+	}
+
+	// Migrate to multi-directory system if needed
+	return app.MigrateToMultiDirectory()
 }
 
 func (app *App) handleTest(w http.ResponseWriter, r *http.Request) {
