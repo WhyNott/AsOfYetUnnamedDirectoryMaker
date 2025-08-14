@@ -4,25 +4,27 @@
     <title>Directory Service</title>
     <meta name="csrf-token" content="{{.CSRFToken}}">
     <link rel="stylesheet" href="/static/css/home.css">
+    <!-- <link rel="stylesheet" href="https://matcha.mizu.sh/matcha.css"> -->
+    <link rel="stylesheet" href="https://latex.vercel.app/style.css"> 
 </head>
 <body>
     <div class="container">
         <div class="header">
             <div>
                 <h1>{{.Directory.Name}}</h1>
-                <div style="font-size: 14px; color: #666; margin-top: 5px;">
+                <div>
                     Directory: <strong>{{.Directory.ID}}</strong>
                     {{if .Directory.Description}} • {{.Directory.Description}}{{end}}
                 </div>
             </div>
-            <div class="nav-controller" style="display: flex">
+            <div class="nav-controller">
                 {{if .IsAuthenticated}}
-                    <span style="margin-right: 15px; color: #666;">Logged in as: <strong>{{.UserEmail}}</strong>
-                        {{if .IsAdmin}}<span style="background: #dc3545; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px;">ADMIN</span>{{end}}
-                        {{if .IsDirectoryOwner}}<span style="background: #28a745; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px;">OWNER</span>{{end}}
-                        {{if .IsModerator}}<span style="background: #007bff; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px;">MODERATOR</span>{{end}}
+                    <span>Logged in as: <strong>{{.UserEmail}}</strong>
+                        {{if .IsAdmin}}<span>ADMIN</span>{{end}}
+                        {{if .IsDirectoryOwner}}<span>OWNER</span>{{end}}
+                        {{if .IsModerator}}<span>MODERATOR</span>{{end}}
                     </span>
-                    <a href="/logout" class="admin-btn" style="background: #dc3545;">Logout</a>
+                    <a href="/logout" class="admin-btn">Logout</a>
                 {{else}}
                     <a href="/login" class="admin-btn">Login</a>
                 {{end}}
@@ -32,10 +34,10 @@
                         <a href="{{.AdminURL}}" class="admin-btn">Owner Panel</a>
                     {{end}}
                     {{if .IsModerator}}
-                        <a href="/moderator" class="admin-btn" style="background: #007bff;">Moderator Dashboard</a>
+                        <a href="/moderator" class="admin-btn">Moderator Dashboard</a>
                     {{end}}
                     {{if .IsAdmin}}
-                        <a href="/admin" class="admin-btn" style="background: #dc3545;">Admin</a>
+                        <a href="/admin" class="admin-btn">Admin</a>
                     {{end}}
                 {{end}}
             </div>
@@ -43,7 +45,7 @@
         
         <div class="controls">
             {{if .IsAuthenticated}}
-                <select id="directorySelector" class="search-box" style="width: 200px; margin-right: 10px;">
+                <select id="directorySelector" class="search-box">
                     <option value="">Loading directories...</option>
                 </select>
             {{end}}
@@ -53,7 +55,7 @@
         </div>
         
         <div id="loading">Loading directory...</div>
-        <table id="directoryTable" style="display: none;">
+        <table id="directoryTable">
             <thead id="tableHeader"></thead>
             <tbody id="tableBody"></tbody>
         </table>
@@ -76,14 +78,14 @@
 
     <!-- Add Row Modal -->
     <div id="addRowModal" class="modal">
-        <div class="modal-content" style="width: 600px;">
+        <div class="modal-content">
             <span class="close" id="closeAddRow">&times;</span>
             <h2>Add New Row</h2>
             <p>Fill in the values for each column:</p>
             <div id="addRowInputs"></div>
-            <div style="margin-top: 20px;">
+            <div>
                 <button id="submitNewRow">Add Row</button>
-                <button id="cancelNewRow" class="cancel">Cancel</button>
+                <button id="cancelNewRow">Cancel</button>
             </div>
         </div>
     </div>
@@ -94,12 +96,12 @@
             <span class="close" id="closeDeleteRow">&times;</span>
             <h2>Delete Row</h2>
             <p><strong>Warning:</strong> This will permanently delete the selected row.</p>
-            <p>Row data: <span id="deleteRowData" style="font-style: italic; color: #666;"></span></p>
+            <p>Row data: <span id="deleteRowData"></span></p>
             <label for="deleteReason">Reason for deletion (optional):</label>
             <input type="text" id="deleteReason" placeholder="Enter reason for deleting this row..." maxlength="500" />
-            <div style="margin-top: 20px;">
-                <button id="confirmDelete" style="background: #dc3545;">Delete Row</button>
-                <button id="cancelDelete" class="cancel">Cancel</button>
+            <div>
+                <button id="confirmDelete">Delete Row</button>
+                <button id="cancelDelete">Cancel</button>
             </div>
         </div>
     </div>

@@ -306,18 +306,12 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 <html>
 <head>
     <title>Admin Panel - Directory Service</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
-        .container { max-width: 800px; }
-        input[type="url"] { width: 500px; padding: 10px; }
-        button { padding: 10px 20px; background: #007cba; color: white; border: none; cursor: pointer; }
-        button:hover { background: #005a87; }
-    </style>
+    <link rel="stylesheet" href="/static/css/common.css">
 </head>
 <body>
     <div class="container">
         <h1>Admin Panel - {{.Directory.Name}}</h1>
-        <div style="margin-bottom: 20px; color: #666;">
+        <div>
             <p>Welcome, {{.UserEmail}}</p>
             <p>Managing directory: <strong>{{.Directory.ID}}</strong>
             {{if .Directory.Description}} ({{.Directory.Description}}){{end}}
@@ -325,58 +319,58 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
         </div>
         
         {{if .ImportSuccess}}
-        <div style="background: #d4edda; color: #155724; padding: 15px; border: 1px solid #c3e6cb; border-radius: 4px; margin-bottom: 20px;">
+        <div>
             <strong>✅ Import Successful!</strong> The Google Sheet has been successfully imported into the directory.
-            <a href="{{.ViewDirectoryURL}}" style="color: #155724; text-decoration: underline; margin-left: 10px;">View Directory</a>
+            <a href="{{.ViewDirectoryURL}}">View Directory</a>
         </div>
         {{end}}
         
         <!-- Moderator Management Section -->
-        <div style="margin: 30px 0;">
+        <div>
             <h2>Moderator Management</h2>
             
-            <div style="margin-bottom: 20px;">
-                <button id="showModeratorForm" style="background: #17a2b8;">Add Moderator</button>
-                <button id="viewModerators" style="background: #6c757d;">View Moderators</button>
+            <div>
+                <button id="showModeratorForm">Add Moderator</button>
+                <button id="viewModerators">View Moderators</button>
             </div>
             
             <!-- Add Moderator Form -->
-            <div id="moderatorForm" style="display: none; background: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px;">
+            <div id="moderatorForm" style="display: none;">
                 <h3>Appoint New Moderator</h3>
-                <div style="margin-bottom: 15px;">
-                    <label>Email:</label><br>
-                    <input type="email" id="moderatorEmail" style="width: 300px; padding: 8px;" placeholder="moderator@example.com">
+                <div class="form-group">
+                    <label>Email:</label>
+                    <input type="email" id="moderatorEmail" placeholder="moderator@example.com">
                 </div>
-                <div style="margin-bottom: 15px;">
-                    <label>Username:</label><br>
-                    <input type="text" id="moderatorUsername" style="width: 300px; padding: 8px;" placeholder="username">
+                <div class="form-group">
+                    <label>Username:</label>
+                    <input type="text" id="moderatorUsername" placeholder="username">
                 </div>
-                <div style="margin-bottom: 15px;">
-                    <label>Auth Provider:</label><br>
-                    <select id="authProvider" style="width: 316px; padding: 8px;">
+                <div class="form-group">
+                    <label>Auth Provider:</label>
+                    <select id="authProvider">
                         <option value="google">Google</option>
                         <option value="twitter">Twitter/X</option>
                     </select>
                 </div>
-                <div style="margin-bottom: 15px;">
+                <div class="form-group">
                     <label><input type="checkbox" id="canEdit" checked> Can Edit</label><br>
                     <label><input type="checkbox" id="canApprove"> Can Approve Changes</label><br>
                     <label><input type="checkbox" id="requiresApproval" checked> Requires Approval</label>
                 </div>
-                <div style="margin-bottom: 15px;">
-                    <label>Row Access:</label><br>
-                    <div style="margin-bottom: 10px;">
+                <div class="form-group">
+                    <label>Row Access:</label>
+                    <div>
                         <label><input type="radio" name="rowAccessType" value="all" checked> All Rows</label><br>
                         <label><input type="radio" name="rowAccessType" value="specific"> Specific Rows</label>
                     </div>
-                    <div id="specificRowsSection" style="display: none; border: 1px solid #ddd; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto; background: #f9f9f9;">
-                        <div style="margin-bottom: 10px; font-weight: bold;">Select rows to allow access:</div>
+                    <div id="specificRowsSection" style="display: none;">
+                        <div>Select rows to allow access:</div>
                         <div id="rowSelectionList">Loading rows...</div>
                     </div>
                 </div>
                 <div>
-                    <button id="appointModerator" style="background: #28a745;">Appoint Moderator</button>
-                    <button id="cancelModerator" style="background: #6c757d;">Cancel</button>
+                    <button id="appointModerator">Appoint Moderator</button>
+                    <button id="cancelModerator">Cancel</button>
                 </div>
             </div>
             
@@ -397,12 +391,12 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
             <button type="submit" id="importBtn" style="display:none;">Import Sheet</button>
         </form>
         
-        <div id="previewSection" style="display:none; margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: #f9f9f9;">
+        <div id="previewSection" style="display:none;">
             <h3>Sheet Preview</h3>
             <div id="previewContent"></div>
-            <div style="margin-top: 15px;">
-                <button type="button" id="confirmImport" style="background: #28a745;">Confirm Import</button>
-                <button type="button" id="cancelPreview" style="background: #666;">Cancel</button>
+            <div>
+                <button type="button" id="confirmImport">Confirm Import</button>
+                <button type="button" id="cancelPreview">Cancel</button>
             </div>
         </div>
         
@@ -490,17 +484,17 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
     function showPreview(preview) {
         const content = document.getElementById('previewContent');
         
-        let html = '<div style="margin-bottom: 10px;">';
+        let html = '<div>';
         html += '<strong>Sheet Name:</strong> ' + escapeHtml(preview.sheet_name) + '<br>';
         html += '<strong>Data Rows:</strong> ' + preview.row_count + '<br>';
         html += '<strong>Columns (' + preview.columns.length + '):</strong>';
         html += '</div>';
         
-        html += '<div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">';
+        html += '<div>';
         preview.columns.forEach((column, index) => {
-            html += '<span style="background: #e3f2fd; padding: 4px 8px; border-radius: 3px; border: 1px solid #bbdefb; font-size: 12px;">';
+            html += '<span>';
             html += (index + 1) + '. ' + escapeHtml(column);
-            html += '</span>';
+            html += '</span> ';
         });
         html += '</div>';
         
@@ -639,24 +633,23 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
                         }
                         
                         const checkboxDiv = document.createElement('div');
-                        checkboxDiv.style.marginBottom = '5px';
                         checkboxDiv.innerHTML = 
-                            '<label style="display: flex; align-items: center; padding: 5px; cursor: pointer;">' +
-                                '<input type="checkbox" value="' + row.id + '" style="margin-right: 8px;">' +
-                                '<span style="font-weight: bold; margin-right: 8px;">Row ' + row.id + ':</span>' +
-                                '<span style="color: #666; font-size: 0.9em;">' + rowDataPreview + '</span>' +
+                            '<label>' +
+                                '<input type="checkbox" value="' + row.id + '">' +
+                                '<strong>Row ' + row.id + ':</strong> ' +
+                                '<span>' + rowDataPreview + '</span>' +
                             '</label>';
                         rowSelectionList.appendChild(checkboxDiv);
                     });
                 } else {
-                    rowSelectionList.innerHTML = '<div style="color: #666; font-style: italic;">No rows found in directory</div>';
+                    rowSelectionList.innerHTML = '<div>No rows found in directory</div>';
                 }
             } else {
-                document.getElementById('rowSelectionList').innerHTML = '<div style="color: #dc3545;">Failed to load directory rows</div>';
+                document.getElementById('rowSelectionList').innerHTML = '<div>Failed to load directory rows</div>';
             }
         } catch (error) {
             console.error('Error loading directory rows:', error);
-            document.getElementById('rowSelectionList').innerHTML = '<div style="color: #dc3545;">Error loading rows</div>';
+            document.getElementById('rowSelectionList').innerHTML = '<div>Error loading rows</div>';
         }
     }
     
@@ -686,16 +679,16 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
             return;
         }
         
-        let html = '<div style="display: grid; gap: 15px;">';
+        let html = '<div>';
         moderators.forEach(mod => {
-            html += '<div style="background: white; padding: 15px; border: 1px solid #ddd; border-radius: 5px;">';
-            html += '<div style="font-weight: bold; margin-bottom: 5px;">' + escapeHtml(mod.username) + '</div>';
-            html += '<div style="color: #666; font-size: 14px; margin-bottom: 5px;">' + escapeHtml(mod.user_email) + '</div>';
-            html += '<div style="margin-bottom: 5px;"><span style="background: #e3f2fd; padding: 2px 6px; border-radius: 3px; font-size: 12px;">' + mod.auth_provider + '</span></div>';
-            html += '<div style="font-size: 12px; color: #888;">Appointed by: ' + escapeHtml(mod.appointed_by) + ' (' + mod.appointed_by_type + ')</div>';
-            html += '<div style="font-size: 12px; color: #888;">Created: ' + new Date(mod.created_at).toLocaleDateString() + '</div>';
-            html += '<div style="margin-top: 10px;">';
-            html += '<button onclick="removeModerator(\'' + mod.user_email + '\')" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 12px;">Remove</button>';
+            html += '<div>';
+            html += '<div><strong>' + escapeHtml(mod.username) + '</strong></div>';
+            html += '<div>' + escapeHtml(mod.user_email) + '</div>';
+            html += '<div>' + mod.auth_provider + '</div>';
+            html += '<div>Appointed by: ' + escapeHtml(mod.appointed_by) + ' (' + mod.appointed_by_type + ')</div>';
+            html += '<div>Created: ' + new Date(mod.created_at).toLocaleDateString() + '</div>';
+            html += '<div>';
+            html += '<button onclick="removeModerator(\'' + mod.user_email + '\')">Remove</button>';
             html += '</div>';
             html += '</div>';
         });
