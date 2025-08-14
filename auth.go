@@ -238,8 +238,8 @@ func (app *App) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Authentication successful, redirecting to /admin")
-	http.Redirect(w, r, "/admin", http.StatusTemporaryRedirect)
+	log.Printf("Authentication successful, redirecting to /owner")
+	http.Redirect(w, r, "/owner", http.StatusTemporaryRedirect)
 }
 
 func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
@@ -282,14 +282,14 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	isSuperAdmin, err := app.IsSuperAdmin(userEmail)
+	isAdmin, err := app.IsAdmin(userEmail)
 	if err != nil {
 		log.Printf("Failed to check super admin status: %v", err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 	
-	if !isOwner && !isSuperAdmin {
+	if !isOwner && !isAdmin {
 		log.Printf("User %s does not have access to directory %s", userEmail, directoryID)
 		http.Error(w, "Access denied", http.StatusForbidden)
 		return
@@ -765,7 +765,7 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	viewDirectoryURL := "/"
 	importURL := "/import"
 	previewURL := "/api/preview-sheet"
-	adminURL := "/admin"
+	adminURL := "/owner"
 	if directoryID != "default" {
 		viewDirectoryURL += "?dir=" + directoryID
 		importURL += "?dir=" + directoryID

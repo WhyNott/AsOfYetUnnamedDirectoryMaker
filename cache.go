@@ -126,7 +126,7 @@ func NewPermissionCache() *PermissionCache {
 
 // Permission types
 type Permission struct {
-	IsSuperAdmin     bool
+	IsAdmin          bool
 	IsDirectoryOwner map[string]bool // directory_id -> is_owner
 }
 
@@ -164,26 +164,26 @@ func (pc *PermissionCache) SetDirectoryOwnership(directoryID, userEmail string, 
 	pc.cache.Set(key, isOwner)
 }
 
-// GetSuperAdminStatus retrieves cached super admin status
-func (pc *PermissionCache) GetSuperAdminStatus(userEmail string) (bool, bool) {
-	value, exists := pc.cache.Get("super_admin:" + userEmail)
+// GetAdminStatus retrieves cached admin status
+func (pc *PermissionCache) GetAdminStatus(userEmail string) (bool, bool) {
+	value, exists := pc.cache.Get("admin:" + userEmail)
 	if !exists {
 		return false, false
 	}
 	
-	isSuperAdmin, ok := value.(bool)
-	return isSuperAdmin, ok
+	isAdmin, ok := value.(bool)
+	return isAdmin, ok
 }
 
-// SetSuperAdminStatus caches super admin status
-func (pc *PermissionCache) SetSuperAdminStatus(userEmail string, isSuperAdmin bool) {
-	pc.cache.Set("super_admin:"+userEmail, isSuperAdmin)
+// SetAdminStatus caches admin status
+func (pc *PermissionCache) SetAdminStatus(userEmail string, isAdmin bool) {
+	pc.cache.Set("admin:"+userEmail, isAdmin)
 }
 
 // InvalidateUser removes all cached permissions for a user
 func (pc *PermissionCache) InvalidateUser(userEmail string) {
 	pc.cache.Delete("perm:" + userEmail)
-	pc.cache.Delete("super_admin:" + userEmail)
+	pc.cache.Delete("admin:" + userEmail)
 	
 	// We don't have a direct way to invalidate all directory ownership entries for a user
 	// without iterating through all cache keys, so we'll rely on TTL expiration for those

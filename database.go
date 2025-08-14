@@ -144,7 +144,7 @@ func (app *App) handleHome(w http.ResponseWriter, r *http.Request) {
 	var csrfToken string
 	var userEmail string
 	var isAuthenticated bool
-	var isSuperAdmin bool
+	var isAdmin bool
 	var isDirectoryOwner bool
 	var isModerator bool
 	if session, err := app.SessionStore.Get(r, "auth-session"); err == nil {
@@ -157,7 +157,7 @@ func (app *App) handleHome(w http.ResponseWriter, r *http.Request) {
 				
 				// Check user roles
 				if isAuthenticated {
-					isSuperAdmin, _ = app.IsSuperAdmin(userEmail)
+					isAdmin, _ = app.IsAdmin(userEmail)
 					isDirectoryOwner, _ = app.IsDirectoryOwner(directoryID, userEmail)
 					isModerator, _ = app.IsModerator(userEmail, directoryID)
 				}
@@ -174,7 +174,7 @@ func (app *App) handleHome(w http.ResponseWriter, r *http.Request) {
 
 	// Build directory-aware URLs
 	downloadURL := "/download/directory.db"
-	adminURL := "/admin"
+	adminURL := "/owner"
 	if directoryID != "default" {
 		downloadURL += "?dir=" + directoryID
 		adminURL += "?dir=" + directoryID
@@ -184,7 +184,7 @@ func (app *App) handleHome(w http.ResponseWriter, r *http.Request) {
 		CSRFToken         string
 		UserEmail         string
 		IsAuthenticated   bool
-		IsSuperAdmin      bool
+		IsAdmin           bool
 		IsDirectoryOwner  bool
 		IsModerator       bool
 		Directory         *Directory
@@ -194,7 +194,7 @@ func (app *App) handleHome(w http.ResponseWriter, r *http.Request) {
 		CSRFToken:        csrfToken,
 		UserEmail:        userEmail,
 		IsAuthenticated:  isAuthenticated,
-		IsSuperAdmin:     isSuperAdmin,
+		IsAdmin:          isAdmin,
 		IsDirectoryOwner: isDirectoryOwner,
 		IsModerator:      isModerator,
 		Directory:        directory,

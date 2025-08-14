@@ -129,9 +129,9 @@ func (app *App) handleGetModeratorPermissions(w http.ResponseWriter, r *http.Req
 		targetEmail = userEmail // Default to requesting user's permissions
 	}
 	
-	// Only allow users to see their own permissions unless they're admin/super admin
+	// Only allow users to see their own permissions unless they're owner/admin
 	userType, _ := app.GetUserType(userEmail, directoryID)
-	if targetEmail != userEmail && userType != UserTypeAdmin && userType != UserTypeSuperAdmin {
+	if targetEmail != userEmail && userType != UserTypeOwner && userType != UserTypeOwner {
 		utils.AuthorizationError(w)
 		return
 	}
@@ -164,8 +164,8 @@ func (app *App) handleGetPendingChanges(w http.ResponseWriter, r *http.Request) 
 	var changes []PendingChange
 	var err error
 	
-	if userType == UserTypeSuperAdmin || userType == UserTypeAdmin {
-		// Admins and super admins can see all pending changes
+	if userType == UserTypeAdmin || userType == UserTypeOwner {
+		// Platform admins and directory owners can see all pending changes
 		changes, err = app.GetPendingChanges(directoryID, "")
 	} else if userType == UserTypeModerator {
 		// Moderators can only see changes they can approve

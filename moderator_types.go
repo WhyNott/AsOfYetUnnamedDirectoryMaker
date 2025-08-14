@@ -98,8 +98,8 @@ type ChangeApprovalRequest struct {
 
 // UserType constants
 const (
-	UserTypeSuperAdmin = "super_admin"
-	UserTypeAdmin      = "admin"
+	UserTypeAdmin = "admin"
+	UserTypeOwner      = "owner"
 	UserTypeModerator  = "moderator"
 )
 

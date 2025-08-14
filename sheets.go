@@ -33,14 +33,14 @@ func (app *App) handleImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	isSuperAdmin, err := app.IsSuperAdmin(userEmail)
+	isAdmin, err := app.IsAdmin(userEmail)
 	if err != nil {
 		log.Printf("Failed to check super admin status: %v", err)
 		utils.DatabaseError(w)
 		return
 	}
 	
-	if !isOwner && !isSuperAdmin {
+	if !isOwner && !isAdmin {
 		log.Printf("User %s does not have access to directory %s", userEmail, directoryID)
 		utils.AuthorizationError(w)
 		return
@@ -97,7 +97,7 @@ func (app *App) handleImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Import successful, redirecting to admin page with success message")
-	redirectURL := "/admin?imported=true"
+	redirectURL := "/owner?imported=true"
 	if directoryID != "default" {
 		redirectURL += "&dir=" + directoryID
 	}

@@ -121,33 +121,33 @@ func (app *App) IsDirectoryOwner(directoryID, userEmail string) (bool, error) {
 	return isOwner, nil
 }
 
-// IsSuperAdmin checks if a user is a super admin with caching
-func (app *App) IsSuperAdmin(userEmail string) (bool, error) {
+// IsAdmin checks if a user is an admin with caching
+func (app *App) IsAdmin(userEmail string) (bool, error) {
 	// Check cache first
-	if isSuperAdmin, cached := app.PermissionCache.GetSuperAdminStatus(userEmail); cached {
-		return isSuperAdmin, nil
+	if isAdmin, cached := app.PermissionCache.GetAdminStatus(userEmail); cached {
+		return isAdmin, nil
 	}
 	
 	// Query database
 	var count int
 	err := app.DB.QueryRow(`
-		SELECT COUNT(*) FROM super_admins WHERE user_email = ?
+		SELECT COUNT(*) FROM admins WHERE user_email = ?
 	`, userEmail).Scan(&count)
 	if err != nil {
-		return false, WrapDatabaseError(ErrTypeConnection, "failed to check super admin status", err)
+		return false, WrapDatabaseError(ErrTypeConnection, "failed to check admin status", err)
 	}
 	
-	isSuperAdmin := count > 0
+	isAdmin := count > 0
 	// Cache the result
-	app.PermissionCache.SetSuperAdminStatus(userEmail, isSuperAdmin)
+	app.PermissionCache.SetAdminStatus(userEmail, isAdmin)
 	
-	return isSuperAdmin, nil
+	return isAdmin, nil
 }
 
-// AddSuperAdmin adds a user as a super admin and invalidates cache
-func (app *App) AddSuperAdmin(userEmail string) error {
+// AddAdmin adds a user as an admin and invalidates cache
+func (app *App) AddAdmin(userEmail string) error {
 	_, err := app.DB.Exec(`
-		INSERT OR IGNORE INTO super_admins (user_email, created_at)
+		INSERT OR IGNORE INTO admins (user_email, created_at)
 		VALUES (?, ?)
 	`, userEmail, time.Now())
 	
@@ -328,7 +328,7 @@ func (app *App) DeleteDirectory(directoryID string) error {
 // GetUserDirectories returns all directories a user has access to (owned directories plus all directories for super admins)
 func (app *App) GetUserDirectories(userEmail string) ([]Directory, error) {
 	// Check if user is super admin
-	isSuperAdmin, err := app.IsSuperAdmin(userEmail)
+	isAdmin, err := app.IsAdmin(userEmail)
 	if err != nil {
 		return nil, WrapDatabaseError(ErrTypeConnection, "failed to check super admin status", err)
 	}
@@ -336,8 +336,8 @@ func (app *App) GetUserDirectories(userEmail string) ([]Directory, error) {
 	var directories []Directory
 	var rows *sql.Rows
 
-	if isSuperAdmin {
-		// Super admins see all directories
+	if isAdmin {
+		// Admins see all directories
 		rows, err = app.DB.Query(`
 			SELECT d.id, d.name, d.description, d.database_path, d.created_at, d.updated_at
 			FROM directories d

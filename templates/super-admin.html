@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Super Admin Panel</title>
+    <title>Admin Panel</title>
     <meta name="csrf-token" content="{{.CSRFToken}}">
     <link rel="stylesheet" href="/static/css/super-admin.css">
 </head>
@@ -9,8 +9,8 @@
     <div class="container">
         <div class="header">
             <div>
-                <h1>Super Admin Panel</h1>
-                <div>Welcome, {{.UserEmail}} <span class="super-admin-badge">SUPER ADMIN</span></div>
+                <h1>Admin Panel</h1>
+                <div>Welcome, {{.UserEmail}} <span class="admin-badge">ADMIN</span></div>
             </div>
             <div>
                 <a href="/" class="btn btn-primary">Back to Home</a>
@@ -57,7 +57,7 @@
     </div>
     <script>
         // Pass template variables to global scope
-        window.superAdminConfig = {
+        window.adminConfig = {
             csrfToken: '{{.CSRFToken}}'
         };
     </script>

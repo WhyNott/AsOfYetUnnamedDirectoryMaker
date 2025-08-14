@@ -18,7 +18,7 @@
             <div>
                 {{if .IsAuthenticated}}
                     <span style="margin-right: 15px; color: #666;">Logged in as: <strong>{{.UserEmail}}</strong>
-                        {{if .IsSuperAdmin}}<span style="background: #dc3545; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px;">SUPER ADMIN</span>{{end}}
+                        {{if .IsAdmin}}<span style="background: #dc3545; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px;">ADMIN</span>{{end}}
                         {{if .IsDirectoryOwner}}<span style="background: #28a745; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px;">OWNER</span>{{end}}
                         {{if .IsModerator}}<span style="background: #007bff; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px;">MODERATOR</span>{{end}}
                     </span>
@@ -28,14 +28,14 @@
                 {{end}}
                 <a href="{{.DownloadURL}}" class="download-btn">Download Database</a>
                 {{if .IsAuthenticated}}
-                    {{if or .IsDirectoryOwner .IsSuperAdmin}}
-                        <a href="{{.AdminURL}}" class="admin-btn">Admin Panel</a>
+                    {{if or .IsDirectoryOwner .IsAdmin}}
+                        <a href="{{.AdminURL}}" class="admin-btn">Owner Panel</a>
                     {{end}}
                     {{if .IsModerator}}
                         <a href="/moderator" class="admin-btn" style="background: #007bff;">Moderator Dashboard</a>
                     {{end}}
-                    {{if .IsSuperAdmin}}
-                        <a href="/super-admin" class="admin-btn" style="background: #dc3545;">Super Admin</a>
+                    {{if .IsAdmin}}
+                        <a href="/admin" class="admin-btn" style="background: #dc3545;">Admin</a>
                     {{end}}
                 {{end}}
             </div>

@@ -8,24 +8,24 @@ import (
 	"time"
 )
 
-// GetUserType returns the type of user (super_admin, admin, moderator, or none)
+// GetUserType returns the type of user (admin, owner, moderator, or none)
 func (app *App) GetUserType(userEmail, directoryID string) (string, error) {
-	// Check super admin first
-	isSuperAdmin, err := app.IsSuperAdmin(userEmail)
-	if err != nil {
-		return "", err
-	}
-	if isSuperAdmin {
-		return UserTypeSuperAdmin, nil
-	}
-	
-	// Check directory admin
-	isAdmin, err := app.IsDirectoryOwner(directoryID, userEmail)
+	// Check admin first
+	isAdmin, err := app.IsAdmin(userEmail)
 	if err != nil {
 		return "", err
 	}
 	if isAdmin {
-		return UserTypeAdmin, nil
+		return UserTypeOwner, nil
+	}
+	
+	// Check directory owner
+	isOwner, err := app.IsDirectoryOwner(directoryID, userEmail)
+	if err != nil {
+		return "", err
+	}
+	if isOwner {
+		return UserTypeOwner, nil
 	}
 	
 	// Check moderator
@@ -135,10 +135,10 @@ func (app *App) AppointModerator(appointedBy, appointedByType string, request Ap
 // CanAppointModerator checks if a user can appoint moderators
 func (app *App) CanAppointModerator(userEmail, userType, directoryID string) (bool, error) {
 	switch userType {
-	case UserTypeSuperAdmin:
-		return true, nil
 	case UserTypeAdmin:
-		// Check if they're admin of this directory
+		return true, nil
+	case UserTypeOwner:
+		// Check if they're owner of this directory
 		return app.IsDirectoryOwner(directoryID, userEmail)
 	case UserTypeModerator:
 		// Moderators can appoint other moderators if they have approval permissions
@@ -295,10 +295,10 @@ func (app *App) GetModeratorHierarchy(moderatorEmail, directoryID string) ([]Mod
 // CanRemoveModerator checks if a user can remove a specific moderator
 func (app *App) CanRemoveModerator(userEmail, userType, moderatorEmail, directoryID string) (bool, error) {
 	switch userType {
-	case UserTypeSuperAdmin:
-		return true, nil
 	case UserTypeAdmin:
-		// Admins can remove moderators from their directory
+		return true, nil
+	case UserTypeOwner:
+		// Owners can remove moderators from their directory
 		return app.IsDirectoryOwner(directoryID, userEmail)
 	case UserTypeModerator:
 		// Moderators can only remove moderators they appointed
@@ -382,7 +382,7 @@ func (app *App) CanApproveChange(userEmail, directoryID string, changeID int) (b
 	}
 	
 	switch userType {
-	case UserTypeSuperAdmin, UserTypeAdmin:
+	case UserTypeAdmin, UserTypeOwner:
 		return true, nil
 	case UserTypeModerator:
 		// Check if moderator has approval permissions and the change is in their domain

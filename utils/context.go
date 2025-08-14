@@ -12,7 +12,7 @@ const (
 	CSRFTokenKey      contextKey = "csrf_token"
 	AuthenticatedKey  contextKey = "authenticated"
 	DirectoryIDKey    contextKey = "directory_id"
-	IsSuperAdminKey   contextKey = "is_super_admin"
+	IsAdminKey        contextKey = "is_admin"
 	IsModeratorKey    contextKey = "is_moderator"
 	UserTypeKey       contextKey = "user_type"
 )
@@ -50,10 +50,10 @@ func GetUserType(r *http.Request) (string, bool) {
 	return userType, ok && userType != ""
 }
 
-// IsSuperAdmin checks if user is super admin from context
-func IsSuperAdmin(r *http.Request) bool {
-	isSuperAdmin, ok := r.Context().Value(IsSuperAdminKey).(bool)
-	return ok && isSuperAdmin
+// IsAdmin checks if user is admin from context
+func IsAdmin(r *http.Request) bool {
+	isAdmin, ok := r.Context().Value(IsAdminKey).(bool)
+	return ok && isAdmin
 }
 
 // IsModerator checks if user is moderator from context  

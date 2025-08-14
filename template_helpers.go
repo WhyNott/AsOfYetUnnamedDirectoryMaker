@@ -86,9 +86,9 @@ func init() {
 // UserBadge creates a user role badge HTML
 func UserBadge(userType string) template.HTML {
 	badges := map[string]string{
-		"super_admin": `<span class="super-admin-badge">SUPER ADMIN</span>`,
-		"admin":       `<span class="owner-badge">OWNER</span>`,
-		"moderator":   `<span class="moderator-badge">MODERATOR</span>`,
+		"admin":     `<span class="admin-badge">ADMIN</span>`,
+		"owner":     `<span class="owner-badge">OWNER</span>`,
+		"moderator": `<span class="moderator-badge">MODERATOR</span>`,
 	}
 	
 	if badge, exists := badges[userType]; exists {
@@ -247,7 +247,7 @@ type TemplateData struct {
 	// User information
 	UserEmail          string
 	IsAuthenticated    bool
-	IsSuperAdmin       bool
+	IsAdmin            bool
 	IsDirectoryOwner   bool
 	IsModerator        bool
 	UserType           string
@@ -319,7 +319,7 @@ func (app *App) BuildTemplateData(r *http.Request, pageData interface{}) (*Templ
 		data.IsAuthenticated = true
 		
 		// Get permissions from context (set by TemplateContextMiddleware)
-		data.IsSuperAdmin, _ = ctx.Value(IsSuperAdminKey).(bool)
+		data.IsAdmin, _ = ctx.Value(IsAdminKey).(bool)
 		data.IsModerator, _ = ctx.Value(IsModeratorKey).(bool)
 		data.IsDirectoryOwner, _ = ctx.Value(contextKey("IsDirectoryOwner")).(bool)
 		data.UserType, _ = ctx.Value(UserTypeKey).(string)
@@ -329,7 +329,7 @@ func (app *App) BuildTemplateData(r *http.Request, pageData interface{}) (*Templ
 	data.CSRFToken, _ = ctx.Value(CSRFTokenKey).(string)
 	
 	// Build URLs
-	data.AdminURL = "/admin"
+	data.AdminURL = "/owner"
 	data.ViewDirectoryURL = "/"
 	data.DownloadURL = "/download"
 	data.ImportURL = "/import"

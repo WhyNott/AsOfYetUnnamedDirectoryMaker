@@ -9,7 +9,7 @@ import (
 	"directoryCommunityWebsite/utils"
 )
 
-// handleSuperAdmin displays the super admin panel
+// handleSuperAdmin displays the admin panel
 func (app *App) handleSuperAdmin(w http.ResponseWriter, r *http.Request) {
 	userEmail, ok := utils.RequireAuthentication(w, r)
 	if !ok {

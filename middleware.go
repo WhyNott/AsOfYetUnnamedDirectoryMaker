@@ -19,7 +19,7 @@ const (
 	CSRFTokenKey      contextKey = "csrf_token"
 	AuthenticatedKey  contextKey = "authenticated"
 	DirectoryIDKey    contextKey = "directory_id"
-	IsSuperAdminKey   contextKey = "is_super_admin"
+	IsAdminKey        contextKey = "is_admin"
 	IsModeratorKey    contextKey = "is_moderator"
 	UserTypeKey       contextKey = "user_type"
 )
@@ -125,7 +125,7 @@ func (app *App) TemplateContextMiddleware(next http.HandlerFunc) http.HandlerFun
 		userEmail, isAuthenticated := ctx.Value(UserEmailKey).(string)
 		if isAuthenticated {
 			// Get user permissions
-			isSuperAdmin, _ := app.IsSuperAdmin(userEmail)
+			isAdmin, _ := app.IsAdmin(userEmail)
 			isDirectoryOwner, _ := app.IsDirectoryOwner(directoryID, userEmail)
 			isModerator, _ := app.IsModerator(userEmail, directoryID)
 			
@@ -133,7 +133,7 @@ func (app *App) TemplateContextMiddleware(next http.HandlerFunc) http.HandlerFun
 			userType, _ := app.GetUserType(userEmail, directoryID)
 			
 			// Add to context
-			ctx = context.WithValue(ctx, IsSuperAdminKey, isSuperAdmin)
+			ctx = context.WithValue(ctx, IsAdminKey, isAdmin)
 			ctx = context.WithValue(ctx, IsModeratorKey, isModerator)
 			ctx = context.WithValue(ctx, UserTypeKey, userType)
 			
@@ -206,16 +206,16 @@ func (app *App) DirectoryAuthMiddleware(next http.HandlerFunc) http.HandlerFunc 
 			directoryID = "default"
 		}
 
-		// Check if user is super admin
-		isSuperAdmin, err := app.IsSuperAdmin(userEmail)
+		// Check if user is admin
+		isAdmin, err := app.IsAdmin(userEmail)
 		if err != nil {
-			log.Printf("Error checking super admin status: %v", err)
+			log.Printf("Error checking admin status: %v", err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 
-		// If not super admin, check directory ownership
-		if !isSuperAdmin {
+		// If not admin, check directory ownership
+		if !isAdmin {
 			hasAccess, err := app.IsDirectoryOwner(directoryID, userEmail)
 			if err != nil {
 				log.Printf("Error checking directory ownership: %v", err)
@@ -242,9 +242,9 @@ func (app *App) DirectoryAuthMiddleware(next http.HandlerFunc) http.HandlerFunc 
 
 		// Add directory info to context
 		ctx := context.WithValue(r.Context(), DirectoryIDKey, directoryID)
-		ctx = context.WithValue(ctx, IsSuperAdminKey, isSuperAdmin)
+		ctx = context.WithValue(ctx, IsAdminKey, isAdmin)
 
-		log.Printf("Directory access granted: user=%s, directory=%s, super_admin=%v", userEmail, directoryID, isSuperAdmin)
+		log.Printf("Directory access granted: user=%s, directory=%s, admin=%v", userEmail, directoryID, isAdmin)
 
 		// Store directory in request for handlers to use
 		r.Header.Set("X-Directory-ID", directory.ID)
@@ -254,8 +254,8 @@ func (app *App) DirectoryAuthMiddleware(next http.HandlerFunc) http.HandlerFunc 
 	}
 }
 
-// SuperAdminMiddleware requires super admin privileges
-func (app *App) SuperAdminMiddleware(next http.HandlerFunc) http.HandlerFunc {
+// AdminMiddleware requires admin privileges
+func (app *App) AdminMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userEmail, ok := r.Context().Value(UserEmailKey).(string)
 		if !ok {
@@ -263,20 +263,20 @@ func (app *App) SuperAdminMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		isSuperAdmin, err := app.IsSuperAdmin(userEmail)
+		isAdmin, err := app.IsAdmin(userEmail)
 		if err != nil {
-			log.Printf("Error checking super admin status: %v", err)
+			log.Printf("Error checking admin status: %v", err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 
-		if !isSuperAdmin {
-			http.Error(w, "Access denied - super admin privileges required", http.StatusForbidden)
+		if !isAdmin {
+			http.Error(w, "Access denied - admin privileges required", http.StatusForbidden)
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), IsSuperAdminKey, true)
-		ctx = context.WithValue(ctx, UserTypeKey, UserTypeSuperAdmin)
+		ctx := context.WithValue(r.Context(), IsAdminKey, true)
+		ctx = context.WithValue(ctx, UserTypeKey, UserTypeOwner)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }
@@ -300,8 +300,8 @@ func (app *App) ModeratorMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		
-		// Allow super admins, admins, and moderators
-		if userType != UserTypeSuperAdmin && userType != UserTypeAdmin && userType != UserTypeModerator {
+		// Allow admins, owners, and moderators
+		if userType != UserTypeAdmin && userType != UserTypeOwner && userType != UserTypeModerator {
 			http.Error(w, "Access denied - moderator privileges required", http.StatusForbidden)
 			return
 		}
@@ -309,8 +309,10 @@ func (app *App) ModeratorMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		ctx := context.WithValue(r.Context(), UserTypeKey, userType)
 		ctx = context.WithValue(ctx, DirectoryIDKey, directoryID)
 		
-		if userType == UserTypeSuperAdmin {
-			ctx = context.WithValue(ctx, IsSuperAdminKey, true)
+		if userType == UserTypeAdmin {
+			ctx = context.WithValue(ctx, IsAdminKey, true)
+		} else if userType == UserTypeOwner {
+			// Directory owners don't need special context flags
 		} else if userType == UserTypeModerator {
 			ctx = context.WithValue(ctx, IsModeratorKey, true)
 		}
@@ -348,8 +350,8 @@ func (app *App) AdminOrModeratorMiddleware(next http.HandlerFunc) http.HandlerFu
 		ctx = context.WithValue(ctx, DirectoryIDKey, directoryID)
 		
 		switch userType {
-		case UserTypeSuperAdmin:
-			ctx = context.WithValue(ctx, IsSuperAdminKey, true)
+		case UserTypeAdmin:
+			ctx = context.WithValue(ctx, IsAdminKey, true)
 		case UserTypeModerator:
 			ctx = context.WithValue(ctx, IsModeratorKey, true)
 		}

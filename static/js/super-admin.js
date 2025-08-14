@@ -2,8 +2,8 @@ var csrfToken = '';
 
 window.onload = function() {
     // Get CSRF token from global config or meta tag
-    if (window.superAdminConfig && window.superAdminConfig.csrfToken) {
-        csrfToken = window.superAdminConfig.csrfToken;
+    if (window.adminConfig && window.adminConfig.csrfToken) {
+        csrfToken = window.adminConfig.csrfToken;
     } else {
         var meta = document.querySelector('meta[name="csrf-token"]');
         if (meta) {
@@ -27,7 +27,7 @@ function createDirectory() {
     };
     
     var xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/super-admin/create-directory');
+    xhr.open('POST', '/api/admin/create-directory');
     xhr.setRequestHeader('Content-Type', 'application/json');
     xhr.setRequestHeader('X-CSRF-Token', csrfToken);
     xhr.onreadystatechange = function() {
@@ -53,7 +53,7 @@ function loadDirectories() {
     containerEl.style.display = 'none';
     
     var xhr = new XMLHttpRequest();
-    xhr.open('GET', '/api/super-admin/directories');
+    xhr.open('GET', '/api/admin/directories');
     xhr.onreadystatechange = function() {
         if (xhr.readyState === 4) {
             loadingEl.style.display = 'none';
@@ -114,7 +114,7 @@ function deleteDirectory(directoryId) {
     };
     
     var xhr = new XMLHttpRequest();
-    xhr.open('DELETE', '/api/super-admin/delete-directory');
+    xhr.open('DELETE', '/api/admin/delete-directory');
     xhr.setRequestHeader('Content-Type', 'application/json');
     xhr.setRequestHeader('X-CSRF-Token', csrfToken);
     xhr.onreadystatechange = function() {

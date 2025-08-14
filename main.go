@@ -132,7 +132,7 @@ func main() {
 	r.HandleFunc("/auth/callback", app.handleAuthCallback).Methods("GET")
 	r.HandleFunc("/auth/twitter", app.handleTwitterLogin).Methods("GET")
 	r.HandleFunc("/auth/twitter/callback", app.handleTwitterCallback).Methods("GET")
-	r.HandleFunc("/admin", app.AuthMiddleware(app.handleAdmin)).Methods("GET")
+	r.HandleFunc("/owner", app.AuthMiddleware(app.handleAdmin)).Methods("GET")
 	r.HandleFunc("/import", app.AuthMiddleware(app.CSRFMiddleware(app.handleImport))).Methods("POST")
 	r.HandleFunc("/api/preview-sheet", app.AuthMiddleware(app.CSRFMiddleware(app.handlePreviewSheet))).Methods("POST")
 	r.HandleFunc("/api/directory", app.handleGetDirectory).Methods("GET")
@@ -143,11 +143,11 @@ func main() {
 	r.HandleFunc("/api/delete-row", app.AuthMiddleware(app.CSRFMiddleware(app.handleDeleteRow))).Methods("DELETE")
 	r.HandleFunc("/download/directory.db", app.handleDownloadDB).Methods("GET")
 	
-	// Super admin routes
-	r.HandleFunc("/super-admin", app.AuthMiddleware(app.SuperAdminMiddleware(app.handleSuperAdmin))).Methods("GET")
-	r.HandleFunc("/api/super-admin/directories", app.AuthMiddleware(app.SuperAdminMiddleware(app.handleGetAllDirectories))).Methods("GET")
-	r.HandleFunc("/api/super-admin/create-directory", app.AuthMiddleware(app.SuperAdminMiddleware(app.CSRFMiddleware(app.handleCreateDirectory)))).Methods("POST")
-	r.HandleFunc("/api/super-admin/delete-directory", app.AuthMiddleware(app.SuperAdminMiddleware(app.CSRFMiddleware(app.handleDeleteDirectory)))).Methods("DELETE")
+	// Admin routes (platform-wide)
+	r.HandleFunc("/admin", app.AuthMiddleware(app.AdminMiddleware(app.handleSuperAdmin))).Methods("GET")
+	r.HandleFunc("/api/admin/directories", app.AuthMiddleware(app.AdminMiddleware(app.handleGetAllDirectories))).Methods("GET")
+	r.HandleFunc("/api/admin/create-directory", app.AuthMiddleware(app.AdminMiddleware(app.CSRFMiddleware(app.handleCreateDirectory)))).Methods("POST")
+	r.HandleFunc("/api/admin/delete-directory", app.AuthMiddleware(app.AdminMiddleware(app.CSRFMiddleware(app.handleDeleteDirectory)))).Methods("DELETE")
 	
 	// Moderator management routes
 	r.HandleFunc("/api/moderators", app.AuthMiddleware(app.AdminOrModeratorMiddleware(app.handleGetModerators))).Methods("GET")
@@ -205,7 +205,7 @@ func (app *App) initDatabase() error {
 			FOREIGN KEY (directory_id) REFERENCES directories(id)
 		);
 		
-		CREATE TABLE IF NOT EXISTS super_admins (
+		CREATE TABLE IF NOT EXISTS admins (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_email TEXT NOT NULL UNIQUE,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -308,7 +308,7 @@ func (app *App) handleAdminDirect(w http.ResponseWriter, r *http.Request) {
 		<body>
 			<h1>Direct Admin Access (Testing)</h1>
 			<p>This bypasses OAuth for debugging purposes.</p>
-			<p><a href="/admin">Try Normal Admin (with OAuth)</a></p>
+			<p><a href="/owner">Try Directory Owner Panel (with OAuth)</a></p>
 			<p><a href="/login">Try Login</a></p>
 			<p><a href="/logout">Logout</a></p>
 		</body>
