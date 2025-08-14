@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	utils2 "directoryCommunityWebsite/internal/utils"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -10,72 +11,71 @@ import (
 	"strings"
 	"time"
 
-	"directoryCommunityWebsite/utils"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 )
 
 func (app *App) handleImport(w http.ResponseWriter, r *http.Request) {
-	userEmail, ok := utils.RequireAuthentication(w, r)
+	userEmail, ok := utils2.RequireAuthentication(w, r)
 	if !ok {
 		return
 	}
 
 	// Get directory ID from query parameter or default to "default"
-	directoryID := utils.GetDirectoryID(r)
-	
+	directoryID := utils2.GetDirectoryID(r)
+
 	// Check if user has access to this directory
 	isOwner, err := app.IsDirectoryOwner(directoryID, userEmail)
 	if err != nil {
 		log.Printf("Failed to check directory ownership: %v", err)
-		utils.DatabaseError(w)
+		utils2.DatabaseError(w)
 		return
 	}
-	
+
 	isAdmin, err := app.IsAdmin(userEmail)
 	if err != nil {
 		log.Printf("Failed to check super admin status: %v", err)
-		utils.DatabaseError(w)
+		utils2.DatabaseError(w)
 		return
 	}
-	
+
 	if !isOwner && !isAdmin {
 		log.Printf("User %s does not have access to directory %s", userEmail, directoryID)
-		utils.AuthorizationError(w)
+		utils2.AuthorizationError(w)
 		return
 	}
 
 	sheetURL := SanitizeInput(r.FormValue("sheet_url"))
 	if sheetURL == "" {
-		utils.ValidationError(w, "Sheet URL is required")
+		utils2.ValidationError(w, "Sheet URL is required")
 		return
 	}
 
 	if !ValidateSheetURL(sheetURL) {
 		log.Printf("Invalid sheet URL provided: %s", sheetURL)
-		utils.ValidationError(w, "Invalid Google Sheets URL format")
+		utils2.ValidationError(w, "Invalid Google Sheets URL format")
 		return
 	}
 
 	spreadsheetID, err := extractSpreadsheetID(sheetURL)
 	if err != nil {
 		log.Printf("Failed to extract spreadsheet ID from URL %s: %v", sheetURL, err)
-		utils.ValidationError(w, "Invalid Google Sheets URL")
+		utils2.ValidationError(w, "Invalid Google Sheets URL")
 		return
 	}
 
 	token, err := app.getDecryptedToken(userEmail)
 	if err != nil {
 		log.Printf("Failed to get token for user %s: %v", userEmail, err)
-		utils.InternalServerError(w, "Session not found")
+		utils2.InternalServerError(w, "Session not found")
 		return
 	}
 
 	refreshedToken, err := app.refreshTokenIfNeeded(token)
 	if err != nil {
 		log.Printf("Failed to refresh token: %v", err)
-		utils.InternalServerError(w, "Token refresh failed")
+		utils2.InternalServerError(w, "Token refresh failed")
 		return
 	}
 	token = refreshedToken
@@ -85,14 +85,14 @@ func (app *App) handleImport(w http.ResponseWriter, r *http.Request) {
 
 	if err := app.importFromSheet(ctx, spreadsheetID, refreshedToken, directoryID); err != nil {
 		log.Printf("Failed to import sheet %s: %v", spreadsheetID, err)
-		utils.InternalServerError(w, fmt.Sprintf("Failed to import sheet: %v", err))
+		utils2.InternalServerError(w, fmt.Sprintf("Failed to import sheet: %v", err))
 		return
 	}
 
 	_, err = app.DB.Exec("UPDATE admin_sessions SET sheet_url = ?, directory_id = ? WHERE user_email = ?", sheetURL, directoryID, userEmail)
 	if err != nil {
 		log.Printf("Failed to save sheet URL for user %s: %v", userEmail, err)
-		utils.InternalServerError(w, "Failed to save sheet URL")
+		utils2.InternalServerError(w, "Failed to save sheet URL")
 		return
 	}
 
@@ -376,7 +376,7 @@ func (app *App) deleteSheetRow(spreadsheetID string, rowNumber int, token *oauth
 }
 
 func (app *App) handlePreviewSheet(w http.ResponseWriter, r *http.Request) {
-	userEmail, ok := utils.RequireAuthentication(w, r)
+	userEmail, ok := utils2.RequireAuthentication(w, r)
 	if !ok {
 		return
 	}
@@ -384,40 +384,40 @@ func (app *App) handlePreviewSheet(w http.ResponseWriter, r *http.Request) {
 	var previewReq PreviewRequest
 	if err := json.NewDecoder(r.Body).Decode(&previewReq); err != nil {
 		log.Printf("Failed to decode preview request: %v", err)
-		utils.BadRequestError(w, "Invalid request body")
+		utils2.BadRequestError(w, "Invalid request body")
 		return
 	}
 
 	sheetURL := SanitizeInput(previewReq.SheetURL)
 	if sheetURL == "" {
-		utils.ValidationError(w, "Sheet URL is required")
+		utils2.ValidationError(w, "Sheet URL is required")
 		return
 	}
 
 	if !ValidateSheetURL(sheetURL) {
 		log.Printf("Invalid sheet URL provided for preview: %s", sheetURL)
-		utils.ValidationError(w, "Invalid Google Sheets URL format")
+		utils2.ValidationError(w, "Invalid Google Sheets URL format")
 		return
 	}
 
 	spreadsheetID, err := extractSpreadsheetID(sheetURL)
 	if err != nil {
 		log.Printf("Failed to extract spreadsheet ID from URL %s: %v", sheetURL, err)
-		utils.ValidationError(w, "Invalid Google Sheets URL")
+		utils2.ValidationError(w, "Invalid Google Sheets URL")
 		return
 	}
 
 	token, err := app.getDecryptedToken(userEmail)
 	if err != nil {
 		log.Printf("Failed to get token for user %s: %v", userEmail, err)
-		utils.InternalServerError(w, "Session not found")
+		utils2.InternalServerError(w, "Session not found")
 		return
 	}
 
 	refreshedToken, err := app.refreshTokenIfNeeded(token)
 	if err != nil {
 		log.Printf("Failed to refresh token for preview: %v", err)
-		utils.InternalServerError(w, "Token refresh failed")
+		utils2.InternalServerError(w, "Token refresh failed")
 		return
 	}
 	token = refreshedToken
@@ -428,11 +428,11 @@ func (app *App) handlePreviewSheet(w http.ResponseWriter, r *http.Request) {
 	preview, err := app.previewSheet(ctx, spreadsheetID, refreshedToken)
 	if err != nil {
 		log.Printf("Failed to preview sheet %s: %v", spreadsheetID, err)
-		utils.InternalServerError(w, fmt.Sprintf("Failed to preview sheet: %v", err))
+		utils2.InternalServerError(w, fmt.Sprintf("Failed to preview sheet: %v", err))
 		return
 	}
 
-	utils.RespondWithJSON(w, 200, preview)
+	utils2.RespondWithJSON(w, 200, preview)
 }
 
 func (app *App) previewSheet(ctx context.Context, spreadsheetID string, token *oauth2.Token) (*PreviewResponse, error) {

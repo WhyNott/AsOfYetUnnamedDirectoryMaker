@@ -8,14 +8,14 @@ import (
 type contextKey string
 
 const (
-	UserEmailKey           contextKey = "user_email"
-	CSRFTokenKey           contextKey = "csrf_token"
-	AuthenticatedKey       contextKey = "authenticated"
-	DirectoryIDKey         contextKey = "directory_id"
-	IsAdminKey             contextKey = "is_admin"
-	IsModeratorKey         contextKey = "is_moderator"
-	UserTypeKey            contextKey = "user_type"
-	IsDirectoryOwnerKey    contextKey = "IsDirectoryOwner"
+	UserEmailKey        contextKey = "user_email"
+	CSRFTokenKey        contextKey = "csrf_token"
+	AuthenticatedKey    contextKey = "authenticated"
+	DirectoryIDKey      contextKey = "directory_id"
+	IsAdminKey          contextKey = "is_admin"
+	IsModeratorKey      contextKey = "is_moderator"
+	UserTypeKey         contextKey = "user_type"
+	IsDirectoryOwnerKey contextKey = "IsDirectoryOwner"
 )
 
 // GetUserEmail extracts user email from request context
@@ -57,7 +57,7 @@ func IsAdmin(r *http.Request) bool {
 	return ok && isAdmin
 }
 
-// IsModerator checks if user is moderator from context  
+// IsModerator checks if user is moderator from context
 func IsModerator(r *http.Request) bool {
 	isModerator, ok := r.Context().Value(IsModeratorKey).(bool)
 	return ok && isModerator

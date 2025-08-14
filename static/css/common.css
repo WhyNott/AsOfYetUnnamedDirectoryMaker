@@ -117,7 +117,7 @@ button:hover, .btn:hover {
 .btn-secondary:hover { background: #545b62; }
 
 /* Admin/user badges */
-.super-admin-badge { 
+.admin-badge { 
     background: #dc3545; 
     color: white; 
     padding: 2px 6px; 

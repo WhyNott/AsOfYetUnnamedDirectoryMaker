@@ -13,20 +13,20 @@ import (
 )
 
 type Config struct {
-	GoogleClientID     string
-	GoogleClientSecret string
-	TwitterClientID    string
+	GoogleClientID      string
+	GoogleClientSecret  string
+	TwitterClientID     string
 	TwitterClientSecret string
-	SessionSecret      []byte
-	RedirectURL        string
-	TwitterRedirectURL string
-	DatabasePath       string
-	Port               string
-	SheetRange         string
-	SessionMaxAge      int
-	LogLevel           string
-	Environment        string
-	EncryptionKey      []byte
+	SessionSecret       []byte
+	RedirectURL         string
+	TwitterRedirectURL  string
+	DatabasePath        string
+	Port                string
+	SheetRange          string
+	SessionMaxAge       int
+	LogLevel            string
+	Environment         string
+	EncryptionKey       []byte
 }
 
 func LoadConfig() (*Config, error) {
@@ -59,10 +59,10 @@ func LoadConfig() (*Config, error) {
 
 	config.TwitterClientID = os.Getenv("TWITTER_CLIENT_ID")
 	config.TwitterClientSecret = os.Getenv("TWITTER_CLIENT_SECRET")
-	
+
 	config.RedirectURL = getEnvWithDefault("REDIRECT_URL", "http://localhost:8080/auth/callback")
 	config.TwitterRedirectURL = getEnvWithDefault("TWITTER_REDIRECT_URL", "http://localhost:8080/auth/twitter/callback")
-	config.DatabasePath = getEnvWithDefault("DATABASE_PATH", "./directory.db")
+	config.DatabasePath = getEnvWithDefault("DATABASE_PATH", "./private.db")
 	config.Port = getEnvWithDefault("PORT", "8080")
 	config.SheetRange = getEnvWithDefault("SHEET_RANGE", "A:Z")
 	config.LogLevel = getEnvWithDefault("LOG_LEVEL", "INFO")
@@ -79,11 +79,11 @@ func LoadConfig() (*Config, error) {
 	if encryptionKey == "" {
 		return nil, fmt.Errorf("ENCRYPTION_KEY environment variable is required")
 	}
-	
+
 	if len(encryptionKey) != 64 { // 32 bytes in hex = 64 characters
 		return nil, fmt.Errorf("ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)")
 	}
-	
+
 	keyBytes, err := hex.DecodeString(encryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("ENCRYPTION_KEY must be valid hex: %v", err)

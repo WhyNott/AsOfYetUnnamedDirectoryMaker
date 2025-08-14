@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"directoryCommunityWebsite/internal/utils"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -10,10 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	"directoryCommunityWebsite/utils"
 )
-
 
 func (app *App) LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -21,11 +19,11 @@ func (app *App) LoggingMiddleware(next http.Handler) http.Handler {
 
 		// Create a response writer wrapper to capture status code
 		wrapper := &responseWriterWrapper{ResponseWriter: w, statusCode: 200}
-		
+
 		next.ServeHTTP(wrapper, r)
 
 		duration := time.Since(start)
-		
+
 		AppLogger.WithFields(map[string]interface{}{
 			"method":      r.Method,
 			"path":        r.URL.Path,
@@ -104,14 +102,14 @@ func (app *App) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 func (app *App) TemplateContextMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		
+
 		// Get directory ID
 		directoryID := r.URL.Query().Get("dir")
 		if directoryID == "" {
 			directoryID = "default"
 		}
 		ctx = context.WithValue(ctx, utils.DirectoryIDKey, directoryID)
-		
+
 		// Check if user is authenticated
 		userEmail, isAuthenticated := ctx.Value(utils.UserEmailKey).(string)
 		if isAuthenticated {
@@ -119,19 +117,19 @@ func (app *App) TemplateContextMiddleware(next http.HandlerFunc) http.HandlerFun
 			isAdmin, _ := app.IsAdmin(userEmail)
 			isDirectoryOwner, _ := app.IsDirectoryOwner(directoryID, userEmail)
 			isModerator, _ := app.IsModerator(userEmail, directoryID)
-			
+
 			// Get user type
 			userType, _ := app.GetUserType(userEmail, directoryID)
-			
+
 			// Add to context
 			ctx = context.WithValue(ctx, utils.IsAdminKey, isAdmin)
 			ctx = context.WithValue(ctx, utils.IsModeratorKey, isModerator)
 			ctx = context.WithValue(ctx, utils.UserTypeKey, userType)
-			
+
 			// Add a computed "IsDirectoryOwner" context value
 			ctx = context.WithValue(ctx, utils.IsDirectoryOwnerKey, isDirectoryOwner)
 		}
-		
+
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }
@@ -141,32 +139,32 @@ func StaticCacheMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Get file extension
 		path := r.URL.Path
-		
+
 		// Set cache headers based on file type
 		if strings.HasSuffix(path, ".css") || strings.HasSuffix(path, ".js") {
 			// CSS and JS files - cache for 1 week
 			w.Header().Set("Cache-Control", "public, max-age=604800")
 			w.Header().Set("Vary", "Accept-Encoding")
-		} else if strings.HasSuffix(path, ".png") || strings.HasSuffix(path, ".jpg") || 
-			     strings.HasSuffix(path, ".jpeg") || strings.HasSuffix(path, ".gif") || 
-			     strings.HasSuffix(path, ".svg") || strings.HasSuffix(path, ".ico") {
+		} else if strings.HasSuffix(path, ".png") || strings.HasSuffix(path, ".jpg") ||
+			strings.HasSuffix(path, ".jpeg") || strings.HasSuffix(path, ".gif") ||
+			strings.HasSuffix(path, ".svg") || strings.HasSuffix(path, ".ico") {
 			// Images - cache for 1 month
 			w.Header().Set("Cache-Control", "public, max-age=2592000")
-		} else if strings.HasSuffix(path, ".woff") || strings.HasSuffix(path, ".woff2") || 
-			     strings.HasSuffix(path, ".ttf") || strings.HasSuffix(path, ".otf") {
+		} else if strings.HasSuffix(path, ".woff") || strings.HasSuffix(path, ".woff2") ||
+			strings.HasSuffix(path, ".ttf") || strings.HasSuffix(path, ".otf") {
 			// Fonts - cache for 1 year
 			w.Header().Set("Cache-Control", "public, max-age=31536000")
 		} else {
 			// Other static files - cache for 1 day
 			w.Header().Set("Cache-Control", "public, max-age=86400")
 		}
-		
+
 		// Add ETag for better caching
 		if stat, err := http.Dir("./static/").Open(strings.TrimPrefix(path, "/static/")); err == nil {
 			if fileInfo, err := stat.Stat(); err == nil {
 				etag := fmt.Sprintf(`"%x-%x"`, fileInfo.ModTime().Unix(), fileInfo.Size())
 				w.Header().Set("ETag", etag)
-				
+
 				// Check if client has the file cached
 				if match := r.Header.Get("If-None-Match"); match == etag {
 					w.WriteHeader(http.StatusNotModified)
@@ -175,7 +173,7 @@ func StaticCacheMiddleware(next http.Handler) http.Handler {
 			}
 			stat.Close()
 		}
-		
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -280,9 +278,9 @@ func (app *App) ModeratorMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "User not authenticated", http.StatusUnauthorized)
 			return
 		}
-		
+
 		directoryID := GetCurrentDirectoryID(r)
-		
+
 		// Get user type for this directory
 		userType, err := app.GetUserType(userEmail, directoryID)
 		if err != nil {
@@ -290,16 +288,16 @@ func (app *App) ModeratorMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		
+
 		// Allow admins, owners, and moderators
 		if userType != UserTypeAdmin && userType != UserTypeOwner && userType != UserTypeModerator {
 			http.Error(w, "Access denied - moderator privileges required", http.StatusForbidden)
 			return
 		}
-		
+
 		ctx := context.WithValue(r.Context(), utils.UserTypeKey, userType)
 		ctx = context.WithValue(ctx, utils.DirectoryIDKey, directoryID)
-		
+
 		if userType == UserTypeAdmin {
 			ctx = context.WithValue(ctx, utils.IsAdminKey, true)
 		} else if userType == UserTypeOwner {
@@ -307,7 +305,7 @@ func (app *App) ModeratorMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		} else if userType == UserTypeModerator {
 			ctx = context.WithValue(ctx, utils.IsModeratorKey, true)
 		}
-		
+
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }
@@ -320,9 +318,9 @@ func (app *App) AdminOrModeratorMiddleware(next http.HandlerFunc) http.HandlerFu
 			http.Error(w, "User not authenticated", http.StatusUnauthorized)
 			return
 		}
-		
+
 		directoryID := GetCurrentDirectoryID(r)
-		
+
 		// Get user type for this directory
 		userType, err := app.GetUserType(userEmail, directoryID)
 		if err != nil {
@@ -330,23 +328,23 @@ func (app *App) AdminOrModeratorMiddleware(next http.HandlerFunc) http.HandlerFu
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		
-		// Allow super admins, admins, and moderators
+
+		// Allow owners, admins, and moderators
 		if userType == "" {
-			http.Error(w, "Access denied - admin or moderator privileges required", http.StatusForbidden)
+			http.Error(w, "Access denied - owner or moderator privileges required", http.StatusForbidden)
 			return
 		}
-		
+
 		ctx := context.WithValue(r.Context(), utils.UserTypeKey, userType)
 		ctx = context.WithValue(ctx, utils.DirectoryIDKey, directoryID)
-		
+
 		switch userType {
 		case UserTypeAdmin:
 			ctx = context.WithValue(ctx, utils.IsAdminKey, true)
 		case UserTypeModerator:
 			ctx = context.WithValue(ctx, utils.IsModeratorKey, true)
 		}
-		
+
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }
@@ -432,9 +430,9 @@ func (app *App) RecoveryMiddleware(next http.Handler) http.Handler {
 		defer func() {
 			if err := recover(); err != nil {
 				AppLogger.WithFields(map[string]interface{}{
-					"method":     r.Method,
-					"path":       r.URL.Path,
-					"panic":      fmt.Sprintf("%v", err),
+					"method":      r.Method,
+					"path":        r.URL.Path,
+					"panic":       fmt.Sprintf("%v", err),
 					"remote_addr": r.RemoteAddr,
 				}).Error("Panic recovered in HTTP handler")
 				http.Error(w, "Internal server error", http.StatusInternalServerError)

@@ -2,7 +2,8 @@ package models
 
 import "time"
 
-// Directory represents a directory in the system
+//TODO: Is this actually used anywhere???
+
 type Directory struct {
 	ID           string    `json:"id"`
 	Name         string    `json:"name"`
@@ -20,9 +21,9 @@ type DirectoryEntry struct {
 
 // DirectoryOwner represents ownership relationship
 type DirectoryOwner struct {
-	ID          int    `json:"id"`
-	DirectoryID string `json:"directory_id"`
-	UserEmail   string `json:"user_email"`
+	ID          int       `json:"id"`
+	DirectoryID string    `json:"directory_id"`
+	UserEmail   string    `json:"user_email"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 

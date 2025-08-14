@@ -13,6 +13,7 @@ import (
 )
 
 // Directory represents a directory configuration
+// note: maybe this should be merged with database_manager?
 type Directory struct {
 	ID           string    `json:"id"`
 	Name         string    `json:"name"`
@@ -31,7 +32,7 @@ func (app *App) CreateDirectory(id, name, description, ownerEmail string) error 
 
 	// Create database path
 	dbPath := filepath.Join("./data", id+".db")
-	
+
 	// Ensure data directory exists
 	if err := os.MkdirAll("./data", 0755); err != nil {
 		return WrapDatabaseError(ErrTypePermission, "failed to create data directory", err)
@@ -59,7 +60,7 @@ func (app *App) CreateDirectory(id, name, description, ownerEmail string) error 
 
 		return nil
 	})
-	
+
 	if err != nil {
 		return err
 	}
@@ -85,17 +86,16 @@ func (app *App) GetDirectory(id string) (*Directory, error) {
 		SELECT id, name, description, database_path, created_at, updated_at
 		FROM directories WHERE id = ?
 	`, id).Scan(&dir.ID, &dir.Name, &dir.Description, &dir.DatabasePath, &dir.CreatedAt, &dir.UpdatedAt)
-	
+
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("directory not found")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query directory: %v", err)
 	}
-	
+
 	return &dir, nil
 }
-
 
 // IsDirectoryOwner checks if a user owns or has admin access to a directory with caching
 func (app *App) IsDirectoryOwner(directoryID, userEmail string) (bool, error) {
@@ -103,7 +103,7 @@ func (app *App) IsDirectoryOwner(directoryID, userEmail string) (bool, error) {
 	if isOwner, cached := app.PermissionCache.GetDirectoryOwnership(directoryID, userEmail); cached {
 		return isOwner, nil
 	}
-	
+
 	// Query database
 	var count int
 	err := app.DB.QueryRow(`
@@ -113,11 +113,11 @@ func (app *App) IsDirectoryOwner(directoryID, userEmail string) (bool, error) {
 	if err != nil {
 		return false, WrapDatabaseError(ErrTypeConnection, "failed to check directory ownership", err)
 	}
-	
+
 	isOwner := count > 0
 	// Cache the result
 	app.PermissionCache.SetDirectoryOwnership(directoryID, userEmail, isOwner)
-	
+
 	return isOwner, nil
 }
 
@@ -127,7 +127,7 @@ func (app *App) IsAdmin(userEmail string) (bool, error) {
 	if isAdmin, cached := app.PermissionCache.GetAdminStatus(userEmail); cached {
 		return isAdmin, nil
 	}
-	
+
 	// Query database
 	var count int
 	err := app.DB.QueryRow(`
@@ -136,11 +136,11 @@ func (app *App) IsAdmin(userEmail string) (bool, error) {
 	if err != nil {
 		return false, WrapDatabaseError(ErrTypeConnection, "failed to check admin status", err)
 	}
-	
+
 	isAdmin := count > 0
 	// Cache the result
 	app.PermissionCache.SetAdminStatus(userEmail, isAdmin)
-	
+
 	return isAdmin, nil
 }
 
@@ -150,12 +150,12 @@ func (app *App) AddAdmin(userEmail string) error {
 		INSERT OR IGNORE INTO admins (user_email, created_at)
 		VALUES (?, ?)
 	`, userEmail, time.Now())
-	
+
 	if err == nil {
 		// Invalidate cached permissions for this user
 		app.PermissionCache.InvalidateUser(userEmail)
 	}
-	
+
 	return err
 }
 
@@ -284,7 +284,7 @@ func (app *App) DeleteDirectory(directoryID string) error {
 		SELECT id, name, description, database_path, created_at, updated_at
 		FROM directories WHERE id = ?
 	`, directoryID).Scan(&directory.ID, &directory.Name, &directory.Description, &directory.DatabasePath, &directory.CreatedAt, &directory.UpdatedAt)
-	
+
 	if err == sql.ErrNoRows {
 		return fmt.Errorf("directory not found")
 	}
@@ -325,12 +325,12 @@ func (app *App) DeleteDirectory(directoryID string) error {
 	return nil
 }
 
-// GetUserDirectories returns all directories a user has access to (owned directories plus all directories for super admins)
+// GetUserDirectories returns all directories a user has access to (owned directories plus all directories for admins)
 func (app *App) GetUserDirectories(userEmail string) ([]Directory, error) {
-	// Check if user is super admin
+	// Check if user is admin
 	isAdmin, err := app.IsAdmin(userEmail)
 	if err != nil {
-		return nil, WrapDatabaseError(ErrTypeConnection, "failed to check super admin status", err)
+		return nil, WrapDatabaseError(ErrTypeConnection, "failed to check admin status", err)
 	}
 
 	var directories []Directory

@@ -1,46 +1,45 @@
 package main
 
 import (
+	utils2 "directoryCommunityWebsite/internal/utils"
 	"html/template"
 	"log"
 	"net/http"
-
-	"directoryCommunityWebsite/utils"
 )
 
 // handleModeratorDashboard shows the moderator self-management interface
 func (app *App) handleModeratorDashboard(w http.ResponseWriter, r *http.Request) {
-	userEmail, ok := utils.RequireAuthentication(w, r)
+	userEmail, ok := utils2.RequireAuthentication(w, r)
 	if !ok {
 		return
 	}
 
-	csrfToken, ok := utils.RequireCSRFToken(w, r)
+	csrfToken, ok := utils2.RequireCSRFToken(w, r)
 	if !ok {
 		return
 	}
 
 	// Get directory ID from query parameter or default to "default"
-	directoryID := utils.GetDirectoryID(r)
-	
+	directoryID := utils2.GetDirectoryID(r)
+
 	// Get directory information
 	directory, err := app.GetDirectory(directoryID)
 	if err != nil {
 		log.Printf("Directory %s not found: %v", directoryID, err)
-		utils.NotFoundError(w, "Directory")
+		utils2.NotFoundError(w, "Directory")
 		return
 	}
-	
+
 	// Get user type to confirm they're a moderator
 	userType, err := app.GetUserType(userEmail, directoryID)
 	if err != nil {
 		log.Printf("Failed to get user type: %v", err)
-		utils.DatabaseError(w)
+		utils2.DatabaseError(w)
 		return
 	}
-	
+
 	if userType != UserTypeModerator {
-		utils.AuthorizationError(w)
+		utils2.AuthorizationError(w)
 		return
 	}
 
@@ -48,14 +47,14 @@ func (app *App) handleModeratorDashboard(w http.ResponseWriter, r *http.Request)
 	permissions, err := app.GetModeratorPermissions(userEmail, directoryID)
 	if err != nil {
 		log.Printf("Failed to get moderator permissions: %v", err)
-		utils.InternalServerError(w, "Failed to get permissions")
+		utils2.InternalServerError(w, "Failed to get permissions")
 		return
 	}
 
 	tmpl, err := template.ParseFiles("templates/moderator.html")
 	if err != nil {
 		log.Printf("Failed to parse moderator template: %v", err)
-		utils.InternalServerError(w, "Template error")
+		utils2.InternalServerError(w, "Template error")
 		return
 	}
 
@@ -82,7 +81,7 @@ func (app *App) handleModeratorDashboard(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.Execute(w, data); err != nil {
 		log.Printf("Failed to execute moderator template: %v", err)
-		utils.InternalServerError(w, "Template execution error")
+		utils2.InternalServerError(w, "Template execution error")
 		return
 	}
 }

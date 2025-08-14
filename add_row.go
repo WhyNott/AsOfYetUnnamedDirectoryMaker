@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
+	utils2 "directoryCommunityWebsite/internal/utils"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"time"
 
-	"directoryCommunityWebsite/utils"
 	"golang.org/x/oauth2"
 )
 
@@ -16,7 +16,7 @@ func (app *App) handleAddRow(w http.ResponseWriter, r *http.Request) {
 	var addRowReq AddRowRequest
 	if err := json.NewDecoder(r.Body).Decode(&addRowReq); err != nil {
 		log.Printf("Failed to decode add row request: %v", err)
-		utils.BadRequestError(w, "Invalid request body")
+		utils2.BadRequestError(w, "Invalid request body")
 		return
 	}
 
@@ -28,35 +28,12 @@ func (app *App) handleAddRow(w http.ResponseWriter, r *http.Request) {
 	// Validate the row data
 	if err := ValidateRowData(addRowReq.Data); err != nil {
 		log.Printf("Invalid row data in add request: %v", err)
-		utils.ValidationError(w, err.Error())
+		utils2.ValidationError(w, err.Error())
 		return
 	}
 
 	// Get directory ID from query parameter or default to "default"
-	directoryID := utils.GetDirectoryID(r)
-	
-	// Get directory-specific database connection
-	db, err := app.DirectoryDBManager.GetDirectoryDB(directoryID)
-	if err != nil {
-		log.Printf("Failed to get directory database for %s: %v", directoryID, err)
-		utils.NotFoundError(w, "Directory")
-		return
-	}
-
-	// Add the row to the directory-specific database
-	jsonData, err := json.Marshal(addRowReq.Data)
-	if err != nil {
-		log.Printf("Failed to marshal row data: %v", err)
-		utils.InternalServerError(w, "Failed to process row data")
-		return
-	}
-
-	_, err = db.Exec("INSERT INTO directory (data) VALUES (?)", string(jsonData))
-	if err != nil {
-		log.Printf("Failed to insert row into database: %v", err)
-		utils.InternalServerError(w, "Failed to add row to database")
-		return
-	}
+	directoryID := utils2.GetDirectoryID(r)
 
 	// Try to add the row to the original Google Sheet
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -65,7 +42,7 @@ func (app *App) handleAddRow(w http.ResponseWriter, r *http.Request) {
 		app.addRowToSheet(ctx, addRowReq.Data, directoryID)
 	}()
 
-	utils.RespondWithSuccess(w, nil, "Row added successfully")
+	utils2.RespondWithSuccess(w, nil, "Row added successfully")
 }
 
 func (app *App) addRowToSheet(ctx context.Context, rowData []string, directoryID string) {
@@ -86,6 +63,7 @@ func (app *App) addRowToSheet(ctx context.Context, rowData []string, directoryID
 	default:
 	}
 
+	//TODO: These errors should be communicated to the user!!!!!
 	if err != nil {
 		fmt.Printf("No admin session found for adding row to sheet: %v\n", err)
 		return

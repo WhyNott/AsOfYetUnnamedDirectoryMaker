@@ -1,16 +1,15 @@
 package main
 
 import (
+	"directoryCommunityWebsite/internal/utils"
 	"encoding/json"
 	"html/template"
 	"log"
 	"net/http"
-
-	"directoryCommunityWebsite/utils"
 )
 
-// handleSuperAdmin displays the admin panel
-func (app *App) handleSuperAdmin(w http.ResponseWriter, r *http.Request) {
+// displayAdmin displays the admin panel
+func (app *App) displayAdmin(w http.ResponseWriter, r *http.Request) {
 	userEmail, ok := utils.RequireAuthentication(w, r)
 	if !ok {
 		return
@@ -21,9 +20,9 @@ func (app *App) handleSuperAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := template.ParseFiles("templates/super-admin.html")
+	tmpl, err := template.ParseFiles("templates/admin.html")
 	if err != nil {
-		log.Printf("Failed to parse super admin template: %v", err)
+		log.Printf("Failed to parse admin template: %v", err)
 		utils.InternalServerError(w, "Template error")
 		return
 	}
@@ -35,13 +34,13 @@ func (app *App) handleSuperAdmin(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.Execute(w, data); err != nil {
-		log.Printf("Failed to execute super admin template: %v", err)
+		log.Printf("Failed to execute admin template: %v", err)
 		utils.InternalServerError(w, "Template execution error")
 		return
 	}
 }
 
-// handleGetAllDirectories returns all directories for super admin
+// handleGetAllDirectories returns all directories for the admin
 func (app *App) handleGetAllDirectories(w http.ResponseWriter, r *http.Request) {
 	rows, err := app.DB.Query(`
 		SELECT d.id, d.name, d.description, d.database_path, d.created_at, d.updated_at

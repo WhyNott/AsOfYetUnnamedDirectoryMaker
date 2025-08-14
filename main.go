@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	utils2 "directoryCommunityWebsite/internal/utils"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -9,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"directoryCommunityWebsite/utils"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
 	_ "github.com/mattn/go-sqlite3"
@@ -18,14 +18,14 @@ import (
 )
 
 type App struct {
-	DB                  *sql.DB
-	SessionStore        *sessions.CookieStore
-	OAuthConfig         *oauth2.Config
-	TwitterOAuthConfig  *oauth2.Config
-	Config              *Config
-	EncryptionService   *EncryptionService
-	DirectoryDBManager  *DirectoryDatabaseManager
-	PermissionCache     *PermissionCache
+	DB                 *sql.DB
+	SessionStore       *sessions.CookieStore
+	OAuthConfig        *oauth2.Config
+	TwitterOAuthConfig *oauth2.Config
+	Config             *Config
+	EncryptionService  *EncryptionService
+	DirectoryDBManager *DirectoryDatabaseManager
+	PermissionCache    *utils2.PermissionCache
 }
 
 type DirectoryEntry struct {
@@ -78,8 +78,8 @@ func main() {
 	}
 
 	AppLogger.WithFields(map[string]interface{}{
-		"max_age": config.SessionMaxAge,
-		"secure":  config.Environment == "production",
+		"max_age":     config.SessionMaxAge,
+		"secure":      config.Environment == "production",
 		"environment": config.Environment,
 	}).Info("Session store configured")
 
@@ -98,7 +98,7 @@ func main() {
 			Endpoint: google.Endpoint,
 		},
 	}
-	
+
 	// Initialize Twitter OAuth config if configured
 	app.TwitterOAuthConfig = app.TwitterConfig()
 
@@ -118,7 +118,7 @@ func main() {
 
 	// Initialize directory database manager and permission cache
 	app.DirectoryDBManager = NewDirectoryDatabaseManager(app)
-	app.PermissionCache = NewPermissionCache()
+	app.PermissionCache = utils2.NewPermissionCache()
 
 	r := mux.NewRouter()
 
@@ -131,7 +131,7 @@ func main() {
 	//r.HandleFunc("/admin-direct", app.handleAdminDirect).Methods("GET") // Bypass OAuth for testing
 	r.HandleFunc("/login", app.handleLoginPage).Methods("GET")
 	r.HandleFunc("/logout", app.handleLogout).Methods("GET")
-	r.HandleFunc("/auth/google", app.handleLogin).Methods("GET")  // Renamed Google-specific login
+	r.HandleFunc("/auth/google", app.handleLogin).Methods("GET") // Renamed Google-specific login
 	r.HandleFunc("/auth/callback", app.handleAuthCallback).Methods("GET")
 	r.HandleFunc("/auth/twitter", app.handleTwitterLogin).Methods("GET")
 	r.HandleFunc("/auth/twitter/callback", app.handleTwitterCallback).Methods("GET")
@@ -147,24 +147,24 @@ func main() {
 	r.HandleFunc("/api/add-row", app.AuthMiddleware(app.CSRFMiddleware(app.handleAddRow))).Methods("POST")
 	r.HandleFunc("/api/delete-row", app.AuthMiddleware(app.CSRFMiddleware(app.handleDeleteRow))).Methods("DELETE")
 	r.HandleFunc("/download/directory.db", app.handleDownloadDB).Methods("GET")
-	
+
 	// Admin routes (platform-wide)
-	r.HandleFunc("/admin", app.AuthMiddleware(app.AdminMiddleware(app.handleSuperAdmin))).Methods("GET")
+	r.HandleFunc("/admin", app.AuthMiddleware(app.AdminMiddleware(app.displayAdmin))).Methods("GET")
 	r.HandleFunc("/api/admin/directories", app.AuthMiddleware(app.AdminMiddleware(app.handleGetAllDirectories))).Methods("GET")
 	r.HandleFunc("/api/admin/create-directory", app.AuthMiddleware(app.AdminMiddleware(app.CSRFMiddleware(app.handleCreateDirectory)))).Methods("POST")
 	r.HandleFunc("/api/admin/delete-directory", app.AuthMiddleware(app.AdminMiddleware(app.CSRFMiddleware(app.handleDeleteDirectory)))).Methods("DELETE")
-	
+
 	// Moderator management routes
 	r.HandleFunc("/api/moderators", app.AuthMiddleware(app.AdminOrModeratorMiddleware(app.handleGetModerators))).Methods("GET")
 	r.HandleFunc("/api/moderators/appoint", app.AuthMiddleware(app.AdminOrModeratorMiddleware(app.CSRFMiddleware(app.handleAppointModerator)))).Methods("POST")
 	r.HandleFunc("/api/moderators/remove", app.AuthMiddleware(app.AdminOrModeratorMiddleware(app.CSRFMiddleware(app.handleRemoveModerator)))).Methods("DELETE")
 	r.HandleFunc("/api/moderators/permissions", app.AuthMiddleware(app.ModeratorMiddleware(app.handleGetModeratorPermissions))).Methods("GET")
 	r.HandleFunc("/api/moderators/hierarchy", app.AuthMiddleware(app.ModeratorMiddleware(app.handleGetModeratorHierarchy))).Methods("GET")
-	
+
 	// Change approval routes
 	r.HandleFunc("/api/changes/pending", app.AuthMiddleware(app.ModeratorMiddleware(app.handleGetPendingChanges))).Methods("GET")
 	r.HandleFunc("/api/changes/approve", app.AuthMiddleware(app.ModeratorMiddleware(app.CSRFMiddleware(app.handleApproveChange)))).Methods("POST")
-	
+
 	// Moderator dashboard
 	r.HandleFunc("/moderator", app.AuthMiddleware(app.ModeratorMiddleware(app.handleModeratorDashboard))).Methods("GET")
 
@@ -348,16 +348,16 @@ func (app *App) handleDebugAuth(w http.ResponseWriter, r *http.Request) {
 
 func (app *App) handleDebugMiddleware(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Middleware test:\n")
-	
+
 	// Check if AuthMiddleware set the context
-	userEmail, ok := r.Context().Value(utils.UserEmailKey).(string)
+	userEmail, ok := r.Context().Value(utils2.UserEmailKey).(string)
 	fmt.Fprintf(w, "UserEmailKey in context: %t\n", ok)
 	if ok {
 		fmt.Fprintf(w, "User email: %s\n", userEmail)
 	}
-	
-	// Test utils.RequireAuthentication 
-	userEmail2, ok2 := utils.RequireAuthentication(w, r)
+
+	// Test utils.RequireAuthentication
+	userEmail2, ok2 := utils2.RequireAuthentication(w, r)
 	if !ok2 {
 		fmt.Fprintf(w, "utils.RequireAuthentication failed\n")
 		return

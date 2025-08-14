@@ -2,18 +2,20 @@ package main
 
 import (
 	"context"
+	utils2 "directoryCommunityWebsite/internal/utils"
 	"encoding/json"
 	"html/template"
 	"log"
 	"net/http"
 	"time"
 
-	"directoryCommunityWebsite/utils"
 	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
 	oauth2api "google.golang.org/api/oauth2/v2"
 	"google.golang.org/api/option"
 )
+
+//TODO: This file needs: 1) Extract that giant template somewhere else 2) Make it clear which parts are for google and which are for X
 
 func (app *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Login handler called from: %s", r.Header.Get("Referer"))
@@ -244,28 +246,28 @@ func (app *App) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 
 func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Admin handler called with URL: %s, imported param: %s", r.URL.String(), r.URL.Query().Get("imported"))
-	
-	userEmail, ok := utils.RequireAuthentication(w, r)
+
+	userEmail, ok := utils2.RequireAuthentication(w, r)
 	if !ok {
 		return
 	}
 
 	// Get CSRF token from context, or generate one if not present (for GET requests)
-	csrfToken, ok := utils.GetCSRFToken(r)
+	csrfToken, ok := utils2.GetCSRFToken(r)
 	if !ok {
 		// Generate a CSRF token for this request (needed for forms)
 		var err error
 		csrfToken, err = GenerateCSRFToken()
 		if err != nil {
 			log.Printf("Failed to generate CSRF token: %v", err)
-			utils.InternalServerError(w, "Security token error")
+			utils2.InternalServerError(w, "Security token error")
 			return
 		}
 	}
 
 	// Get directory ID from query parameter or default to "default"
-	directoryID := utils.GetDirectoryID(r)
-	
+	directoryID := utils2.GetDirectoryID(r)
+
 	// Get directory information
 	directory, err := app.GetDirectory(directoryID)
 	if err != nil {
@@ -273,7 +275,7 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Directory not found", http.StatusNotFound)
 		return
 	}
-	
+
 	// Check if user has access to this directory
 	isOwner, err := app.IsDirectoryOwner(directoryID, userEmail)
 	if err != nil {
@@ -281,14 +283,14 @@ func (app *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
-	
+
 	isAdmin, err := app.IsAdmin(userEmail)
 	if err != nil {
 		log.Printf("Failed to check super admin status: %v", err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
-	
+
 	if !isOwner && !isAdmin {
 		log.Printf("User %s does not have access to directory %s", userEmail, directoryID)
 		http.Error(w, "Access denied", http.StatusForbidden)

@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
+	utils2 "directoryCommunityWebsite/internal/utils"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"time"
 
-	"directoryCommunityWebsite/utils"
 	"golang.org/x/oauth2"
 )
 
@@ -16,38 +16,38 @@ func (app *App) handleCorrection(w http.ResponseWriter, r *http.Request) {
 	var correction CorrectionRequest
 	if err := json.NewDecoder(r.Body).Decode(&correction); err != nil {
 		log.Printf("Failed to decode correction request: %v", err)
-		utils.BadRequestError(w, "Invalid request body")
+		utils2.BadRequestError(w, "Invalid request body")
 		return
 	}
 
 	// Validate the correction request
 	if correction.Row < 0 || correction.Column < 0 {
 		log.Printf("Invalid row/column in correction: row=%d, col=%d", correction.Row, correction.Column)
-		utils.ValidationError(w, "Invalid row or column")
+		utils2.ValidationError(w, "Invalid row or column")
 		return
 	}
 
 	if correction.Column > 49 {
 		log.Printf("Column exceeds limit: %d", correction.Column)
-		utils.ValidationError(w, "Column exceeds maximum allowed (50)")
+		utils2.ValidationError(w, "Column exceeds maximum allowed (50)")
 		return
 	}
 
 	correction.Value = SanitizeInput(correction.Value)
 	if len(correction.Value) > 1000 {
 		log.Printf("Correction value too long: %d characters", len(correction.Value))
-		utils.ValidationError(w, "Value exceeds maximum length (1000 characters)")
+		utils2.ValidationError(w, "Value exceeds maximum length (1000 characters)")
 		return
 	}
 
 	// Get directory ID from query parameter or default to "default"
-	directoryID := utils.GetDirectoryID(r)
-	
+	directoryID := utils2.GetDirectoryID(r)
+
 	// Get directory-specific database connection
 	db, err := app.DirectoryDBManager.GetDirectoryDB(directoryID)
 	if err != nil {
 		log.Printf("Failed to get directory database for %s: %v", directoryID, err)
-		utils.NotFoundError(w, "Directory")
+		utils2.NotFoundError(w, "Directory")
 		return
 	}
 
@@ -56,7 +56,7 @@ func (app *App) handleCorrection(w http.ResponseWriter, r *http.Request) {
 	err = db.QueryRow("SELECT data FROM directory ORDER BY id LIMIT 1 OFFSET ?", correction.Row).Scan(&currentData)
 	if err != nil {
 		log.Printf("Failed to get row %d: %v", correction.Row, err)
-		utils.NotFoundError(w, "Row")
+		utils2.NotFoundError(w, "Row")
 		return
 	}
 
@@ -64,7 +64,7 @@ func (app *App) handleCorrection(w http.ResponseWriter, r *http.Request) {
 	var rowData []string
 	if err := json.Unmarshal([]byte(currentData), &rowData); err != nil {
 		log.Printf("Failed to unmarshal row data: %v", err)
-		utils.InternalServerError(w, "Failed to parse row data")
+		utils2.InternalServerError(w, "Failed to parse row data")
 		return
 	}
 
@@ -79,29 +79,7 @@ func (app *App) handleCorrection(w http.ResponseWriter, r *http.Request) {
 	// Validate the updated row data
 	if err := ValidateRowData(rowData); err != nil {
 		log.Printf("Invalid row data after correction: %v", err)
-		utils.ValidationError(w, err.Error())
-		return
-	}
-
-	// Save the updated row back to the database
-	updatedData, err := json.Marshal(rowData)
-	if err != nil {
-		log.Printf("Failed to marshal updated row data: %v", err)
-		utils.InternalServerError(w, "Failed to process row data")
-		return
-	}
-
-	_, err = db.Exec(`
-		UPDATE directory 
-		SET data = ? 
-		WHERE id = (
-			SELECT id FROM directory ORDER BY id LIMIT 1 OFFSET ?
-		)
-	`, string(updatedData), correction.Row)
-
-	if err != nil {
-		log.Printf("Failed to update database for correction: %v", err)
-		utils.InternalServerError(w, "Failed to update database")
+		utils2.ValidationError(w, err.Error())
 		return
 	}
 
@@ -112,7 +90,7 @@ func (app *App) handleCorrection(w http.ResponseWriter, r *http.Request) {
 		app.updateOriginalSheet(ctx, correction.Row, correction.Column, correction.Value, directoryID)
 	}()
 
-	utils.RespondWithSuccess(w, nil, "Correction applied successfully")
+	utils2.RespondWithSuccess(w, nil, "Correction applied successfully")
 }
 
 func (app *App) updateOriginalSheet(ctx context.Context, row, col int, value string, directoryID string) {
