@@ -2,11 +2,14 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
 	"time"
 
+	"directoryCommunityWebsite/utils"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
 	_ "github.com/mattn/go-sqlite3"
@@ -132,7 +135,9 @@ func main() {
 	r.HandleFunc("/auth/callback", app.handleAuthCallback).Methods("GET")
 	r.HandleFunc("/auth/twitter", app.handleTwitterLogin).Methods("GET")
 	r.HandleFunc("/auth/twitter/callback", app.handleTwitterCallback).Methods("GET")
-	r.HandleFunc("/owner", app.AuthMiddleware(app.handleAdmin)).Methods("GET")
+	r.HandleFunc("/debug-auth", app.handleDebugAuth).Methods("GET")
+	r.HandleFunc("/debug-middleware", app.AuthMiddleware(app.handleDebugMiddleware)).Methods("GET")
+	r.HandleFunc("/owner", app.AuthMiddleware(app.DirectoryAuthMiddleware(app.handleAdmin))).Methods("GET")
 	r.HandleFunc("/import", app.AuthMiddleware(app.CSRFMiddleware(app.handleImport))).Methods("POST")
 	r.HandleFunc("/api/preview-sheet", app.AuthMiddleware(app.CSRFMiddleware(app.handlePreviewSheet))).Methods("POST")
 	r.HandleFunc("/api/directory", app.handleGetDirectory).Methods("GET")
@@ -314,4 +319,48 @@ func (app *App) handleAdminDirect(w http.ResponseWriter, r *http.Request) {
 		</body>
 		</html>
 	`))
+}
+
+func (app *App) handleDebugAuth(w http.ResponseWriter, r *http.Request) {
+	session, err := app.SessionStore.Get(r, "auth-session")
+	if err != nil {
+		fmt.Fprintf(w, "Session error: %v\n", err)
+		return
+	}
+
+	sessionDataJSON, ok := session.Values["session_data"].(string)
+	if !ok || sessionDataJSON == "" {
+		fmt.Fprintf(w, "No session data found\n")
+		return
+	}
+
+	var sessionData SessionData
+	if err := json.Unmarshal([]byte(sessionDataJSON), &sessionData); err != nil {
+		fmt.Fprintf(w, "Failed to unmarshal session data: %v\n", err)
+		return
+	}
+
+	fmt.Fprintf(w, "Session valid:\n")
+	fmt.Fprintf(w, "User: %s\n", sessionData.UserEmail)
+	fmt.Fprintf(w, "Authenticated: %t\n", sessionData.Authenticated)
+	fmt.Fprintf(w, "Created: %s\n", sessionData.CreatedAt)
+}
+
+func (app *App) handleDebugMiddleware(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Middleware test:\n")
+	
+	// Check if AuthMiddleware set the context
+	userEmail, ok := r.Context().Value(utils.UserEmailKey).(string)
+	fmt.Fprintf(w, "UserEmailKey in context: %t\n", ok)
+	if ok {
+		fmt.Fprintf(w, "User email: %s\n", userEmail)
+	}
+	
+	// Test utils.RequireAuthentication 
+	userEmail2, ok2 := utils.RequireAuthentication(w, r)
+	if !ok2 {
+		fmt.Fprintf(w, "utils.RequireAuthentication failed\n")
+		return
+	}
+	fmt.Fprintf(w, "utils.RequireAuthentication succeeded: %s\n", userEmail2)
 }

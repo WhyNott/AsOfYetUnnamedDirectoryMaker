@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"directoryCommunityWebsite/utils"
 )
 
 
@@ -314,19 +316,19 @@ func (app *App) BuildTemplateData(r *http.Request, pageData interface{}) (*Templ
 	}
 	
 	// Get user information from context
-	if userEmail, ok := ctx.Value(UserEmailKey).(string); ok {
+	if userEmail, ok := ctx.Value(utils.UserEmailKey).(string); ok {
 		data.UserEmail = userEmail
 		data.IsAuthenticated = true
 		
 		// Get permissions from context (set by TemplateContextMiddleware)
-		data.IsAdmin, _ = ctx.Value(IsAdminKey).(bool)
-		data.IsModerator, _ = ctx.Value(IsModeratorKey).(bool)
-		data.IsDirectoryOwner, _ = ctx.Value(contextKey("IsDirectoryOwner")).(bool)
-		data.UserType, _ = ctx.Value(UserTypeKey).(string)
+		data.IsAdmin, _ = ctx.Value(utils.IsAdminKey).(bool)
+		data.IsModerator, _ = ctx.Value(utils.IsModeratorKey).(bool)
+		data.IsDirectoryOwner, _ = ctx.Value(utils.IsDirectoryOwnerKey).(bool)
+		data.UserType, _ = ctx.Value(utils.UserTypeKey).(string)
 	}
 	
 	// Get CSRF token from context
-	data.CSRFToken, _ = ctx.Value(CSRFTokenKey).(string)
+	data.CSRFToken, _ = ctx.Value(utils.CSRFTokenKey).(string)
 	
 	// Build URLs
 	data.AdminURL = "/owner"

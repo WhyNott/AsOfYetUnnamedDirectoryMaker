@@ -8,13 +8,14 @@ import (
 type contextKey string
 
 const (
-	UserEmailKey      contextKey = "user_email"
-	CSRFTokenKey      contextKey = "csrf_token"
-	AuthenticatedKey  contextKey = "authenticated"
-	DirectoryIDKey    contextKey = "directory_id"
-	IsAdminKey        contextKey = "is_admin"
-	IsModeratorKey    contextKey = "is_moderator"
-	UserTypeKey       contextKey = "user_type"
+	UserEmailKey           contextKey = "user_email"
+	CSRFTokenKey           contextKey = "csrf_token"
+	AuthenticatedKey       contextKey = "authenticated"
+	DirectoryIDKey         contextKey = "directory_id"
+	IsAdminKey             contextKey = "is_admin"
+	IsModeratorKey         contextKey = "is_moderator"
+	UserTypeKey            contextKey = "user_type"
+	IsDirectoryOwnerKey    contextKey = "IsDirectoryOwner"
 )
 
 // GetUserEmail extracts user email from request context

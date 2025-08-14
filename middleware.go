@@ -10,19 +10,10 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"directoryCommunityWebsite/utils"
 )
 
-type contextKey string
-
-const (
-	UserEmailKey      contextKey = "user_email"
-	CSRFTokenKey      contextKey = "csrf_token"
-	AuthenticatedKey  contextKey = "authenticated"
-	DirectoryIDKey    contextKey = "directory_id"
-	IsAdminKey        contextKey = "is_admin"
-	IsModeratorKey    contextKey = "is_moderator"
-	UserTypeKey       contextKey = "user_type"
-)
 
 func (app *App) LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -101,9 +92,9 @@ func (app *App) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), UserEmailKey, sessionData.UserEmail)
-		ctx = context.WithValue(ctx, CSRFTokenKey, sessionData.CSRFToken)
-		ctx = context.WithValue(ctx, AuthenticatedKey, true)
+		ctx := context.WithValue(r.Context(), utils.UserEmailKey, sessionData.UserEmail)
+		ctx = context.WithValue(ctx, utils.CSRFTokenKey, sessionData.CSRFToken)
+		ctx = context.WithValue(ctx, utils.AuthenticatedKey, true)
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
@@ -119,10 +110,10 @@ func (app *App) TemplateContextMiddleware(next http.HandlerFunc) http.HandlerFun
 		if directoryID == "" {
 			directoryID = "default"
 		}
-		ctx = context.WithValue(ctx, DirectoryIDKey, directoryID)
+		ctx = context.WithValue(ctx, utils.DirectoryIDKey, directoryID)
 		
 		// Check if user is authenticated
-		userEmail, isAuthenticated := ctx.Value(UserEmailKey).(string)
+		userEmail, isAuthenticated := ctx.Value(utils.UserEmailKey).(string)
 		if isAuthenticated {
 			// Get user permissions
 			isAdmin, _ := app.IsAdmin(userEmail)
@@ -133,12 +124,12 @@ func (app *App) TemplateContextMiddleware(next http.HandlerFunc) http.HandlerFun
 			userType, _ := app.GetUserType(userEmail, directoryID)
 			
 			// Add to context
-			ctx = context.WithValue(ctx, IsAdminKey, isAdmin)
-			ctx = context.WithValue(ctx, IsModeratorKey, isModerator)
-			ctx = context.WithValue(ctx, UserTypeKey, userType)
+			ctx = context.WithValue(ctx, utils.IsAdminKey, isAdmin)
+			ctx = context.WithValue(ctx, utils.IsModeratorKey, isModerator)
+			ctx = context.WithValue(ctx, utils.UserTypeKey, userType)
 			
 			// Add a computed "IsDirectoryOwner" context value
-			ctx = context.WithValue(ctx, contextKey("IsDirectoryOwner"), isDirectoryOwner)
+			ctx = context.WithValue(ctx, utils.IsDirectoryOwnerKey, isDirectoryOwner)
 		}
 		
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -193,7 +184,7 @@ func StaticCacheMiddleware(next http.Handler) http.Handler {
 func (app *App) DirectoryAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Get user email from context (set by AuthMiddleware)
-		userEmail, ok := r.Context().Value(UserEmailKey).(string)
+		userEmail, ok := r.Context().Value(utils.UserEmailKey).(string)
 		if !ok {
 			http.Error(w, "User not authenticated", http.StatusUnauthorized)
 			return
@@ -241,8 +232,8 @@ func (app *App) DirectoryAuthMiddleware(next http.HandlerFunc) http.HandlerFunc 
 		}
 
 		// Add directory info to context
-		ctx := context.WithValue(r.Context(), DirectoryIDKey, directoryID)
-		ctx = context.WithValue(ctx, IsAdminKey, isAdmin)
+		ctx := context.WithValue(r.Context(), utils.DirectoryIDKey, directoryID)
+		ctx = context.WithValue(ctx, utils.IsAdminKey, isAdmin)
 
 		log.Printf("Directory access granted: user=%s, directory=%s, admin=%v", userEmail, directoryID, isAdmin)
 
@@ -257,7 +248,7 @@ func (app *App) DirectoryAuthMiddleware(next http.HandlerFunc) http.HandlerFunc 
 // AdminMiddleware requires admin privileges
 func (app *App) AdminMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userEmail, ok := r.Context().Value(UserEmailKey).(string)
+		userEmail, ok := r.Context().Value(utils.UserEmailKey).(string)
 		if !ok {
 			http.Error(w, "User not authenticated", http.StatusUnauthorized)
 			return
@@ -275,8 +266,8 @@ func (app *App) AdminMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), IsAdminKey, true)
-		ctx = context.WithValue(ctx, UserTypeKey, UserTypeOwner)
+		ctx := context.WithValue(r.Context(), utils.IsAdminKey, true)
+		ctx = context.WithValue(ctx, utils.UserTypeKey, UserTypeOwner)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }
@@ -284,7 +275,7 @@ func (app *App) AdminMiddleware(next http.HandlerFunc) http.HandlerFunc {
 // ModeratorMiddleware requires moderator privileges for a directory
 func (app *App) ModeratorMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userEmail, ok := r.Context().Value(UserEmailKey).(string)
+		userEmail, ok := r.Context().Value(utils.UserEmailKey).(string)
 		if !ok {
 			http.Error(w, "User not authenticated", http.StatusUnauthorized)
 			return
@@ -306,15 +297,15 @@ func (app *App) ModeratorMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		
-		ctx := context.WithValue(r.Context(), UserTypeKey, userType)
-		ctx = context.WithValue(ctx, DirectoryIDKey, directoryID)
+		ctx := context.WithValue(r.Context(), utils.UserTypeKey, userType)
+		ctx = context.WithValue(ctx, utils.DirectoryIDKey, directoryID)
 		
 		if userType == UserTypeAdmin {
-			ctx = context.WithValue(ctx, IsAdminKey, true)
+			ctx = context.WithValue(ctx, utils.IsAdminKey, true)
 		} else if userType == UserTypeOwner {
 			// Directory owners don't need special context flags
 		} else if userType == UserTypeModerator {
-			ctx = context.WithValue(ctx, IsModeratorKey, true)
+			ctx = context.WithValue(ctx, utils.IsModeratorKey, true)
 		}
 		
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -324,7 +315,7 @@ func (app *App) ModeratorMiddleware(next http.HandlerFunc) http.HandlerFunc {
 // AdminOrModeratorMiddleware requires admin or moderator privileges
 func (app *App) AdminOrModeratorMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userEmail, ok := r.Context().Value(UserEmailKey).(string)
+		userEmail, ok := r.Context().Value(utils.UserEmailKey).(string)
 		if !ok {
 			http.Error(w, "User not authenticated", http.StatusUnauthorized)
 			return
@@ -346,14 +337,14 @@ func (app *App) AdminOrModeratorMiddleware(next http.HandlerFunc) http.HandlerFu
 			return
 		}
 		
-		ctx := context.WithValue(r.Context(), UserTypeKey, userType)
-		ctx = context.WithValue(ctx, DirectoryIDKey, directoryID)
+		ctx := context.WithValue(r.Context(), utils.UserTypeKey, userType)
+		ctx = context.WithValue(ctx, utils.DirectoryIDKey, directoryID)
 		
 		switch userType {
 		case UserTypeAdmin:
-			ctx = context.WithValue(ctx, IsAdminKey, true)
+			ctx = context.WithValue(ctx, utils.IsAdminKey, true)
 		case UserTypeModerator:
-			ctx = context.WithValue(ctx, IsModeratorKey, true)
+			ctx = context.WithValue(ctx, utils.IsModeratorKey, true)
 		}
 		
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -363,7 +354,7 @@ func (app *App) AdminOrModeratorMiddleware(next http.HandlerFunc) http.HandlerFu
 func (app *App) CSRFMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE" {
-			expectedToken, ok := r.Context().Value(CSRFTokenKey).(string)
+			expectedToken, ok := r.Context().Value(utils.CSRFTokenKey).(string)
 			if !ok {
 				http.Error(w, "CSRF token not found in session", http.StatusForbidden)
 				return
