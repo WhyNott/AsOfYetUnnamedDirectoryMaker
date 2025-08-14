@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"directoryCommunityWebsite/utils"
 	"golang.org/x/oauth2"
 )
 
@@ -15,14 +16,14 @@ func (app *App) handleDeleteRow(w http.ResponseWriter, r *http.Request) {
 	var deleteRowReq DeleteRowRequest
 	if err := json.NewDecoder(r.Body).Decode(&deleteRowReq); err != nil {
 		log.Printf("Failed to decode delete row request: %v", err)
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		utils.BadRequestError(w, "Invalid request body")
 		return
 	}
 
 	// Validate the delete request
 	if deleteRowReq.Row < 0 {
 		log.Printf("Invalid row in delete request: row=%d", deleteRowReq.Row)
-		http.Error(w, "Invalid row number", http.StatusBadRequest)
+		utils.ValidationError(w, "Invalid row number")
 		return
 	}
 
@@ -30,18 +31,18 @@ func (app *App) handleDeleteRow(w http.ResponseWriter, r *http.Request) {
 	deleteRowReq.Reason = SanitizeInput(deleteRowReq.Reason)
 	if len(deleteRowReq.Reason) > 500 {
 		log.Printf("Delete reason too long: %d characters", len(deleteRowReq.Reason))
-		http.Error(w, "Reason exceeds maximum length (500 characters)", http.StatusBadRequest)
+		utils.ValidationError(w, "Reason exceeds maximum length (500 characters)")
 		return
 	}
 
 	// Get directory ID from query parameter or default to "default"
-	directoryID := GetCurrentDirectoryID(r)
+	directoryID := utils.GetDirectoryID(r)
 	
 	// Get directory-specific database connection
 	db, err := app.DirectoryDBManager.GetDirectoryDB(directoryID)
 	if err != nil {
 		log.Printf("Failed to get directory database for %s: %v", directoryID, err)
-		http.Error(w, "Directory not found", http.StatusNotFound)
+		utils.NotFoundError(w, "Directory")
 		return
 	}
 
@@ -50,13 +51,13 @@ func (app *App) handleDeleteRow(w http.ResponseWriter, r *http.Request) {
 	err = db.QueryRow("SELECT COUNT(*) FROM directory").Scan(&rowCount)
 	if err != nil {
 		log.Printf("Failed to count directory rows: %v", err)
-		http.Error(w, "Database error", http.StatusInternalServerError)
+		utils.DatabaseError(w)
 		return
 	}
 
 	if deleteRowReq.Row >= rowCount {
 		log.Printf("Row %d does not exist (total rows: %d)", deleteRowReq.Row, rowCount)
-		http.Error(w, "Row does not exist", http.StatusNotFound)
+		utils.NotFoundError(w, "Row")
 		return
 	}
 
@@ -65,7 +66,7 @@ func (app *App) handleDeleteRow(w http.ResponseWriter, r *http.Request) {
 	err = db.QueryRow("SELECT data FROM directory ORDER BY id LIMIT 1 OFFSET ?", deleteRowReq.Row).Scan(&deletedData)
 	if err != nil {
 		log.Printf("Failed to get row %d for deletion: %v", deleteRowReq.Row, err)
-		http.Error(w, "Row not found", http.StatusNotFound)
+		utils.NotFoundError(w, "Row")
 		return
 	}
 
@@ -79,7 +80,7 @@ func (app *App) handleDeleteRow(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Printf("Failed to delete row from database: %v", err)
-		http.Error(w, "Failed to delete row from database", http.StatusInternalServerError)
+		utils.InternalServerError(w, "Failed to delete row from database")
 		return
 	}
 
@@ -93,8 +94,7 @@ func (app *App) handleDeleteRow(w http.ResponseWriter, r *http.Request) {
 		app.deleteRowFromSheet(ctx, deleteRowReq.Row, deletedData, deleteRowReq.Reason, directoryID)
 	}()
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	utils.RespondWithSuccess(w, nil, "Row deleted successfully")
 }
 
 func (app *App) deleteRowFromSheet(ctx context.Context, rowIndex int, deletedData, reason string, directoryID string) {

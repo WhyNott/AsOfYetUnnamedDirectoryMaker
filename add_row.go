@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"directoryCommunityWebsite/utils"
 	"golang.org/x/oauth2"
 )
 
@@ -15,7 +16,7 @@ func (app *App) handleAddRow(w http.ResponseWriter, r *http.Request) {
 	var addRowReq AddRowRequest
 	if err := json.NewDecoder(r.Body).Decode(&addRowReq); err != nil {
 		log.Printf("Failed to decode add row request: %v", err)
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		utils.BadRequestError(w, "Invalid request body")
 		return
 	}
 
@@ -27,18 +28,18 @@ func (app *App) handleAddRow(w http.ResponseWriter, r *http.Request) {
 	// Validate the row data
 	if err := ValidateRowData(addRowReq.Data); err != nil {
 		log.Printf("Invalid row data in add request: %v", err)
-		http.Error(w, "Invalid row data: "+err.Error(), http.StatusBadRequest)
+		utils.ValidationError(w, err.Error())
 		return
 	}
 
 	// Get directory ID from query parameter or default to "default"
-	directoryID := GetCurrentDirectoryID(r)
+	directoryID := utils.GetDirectoryID(r)
 	
 	// Get directory-specific database connection
 	db, err := app.DirectoryDBManager.GetDirectoryDB(directoryID)
 	if err != nil {
 		log.Printf("Failed to get directory database for %s: %v", directoryID, err)
-		http.Error(w, "Directory not found", http.StatusNotFound)
+		utils.NotFoundError(w, "Directory")
 		return
 	}
 
@@ -46,14 +47,14 @@ func (app *App) handleAddRow(w http.ResponseWriter, r *http.Request) {
 	jsonData, err := json.Marshal(addRowReq.Data)
 	if err != nil {
 		log.Printf("Failed to marshal row data: %v", err)
-		http.Error(w, "Failed to process row data", http.StatusInternalServerError)
+		utils.InternalServerError(w, "Failed to process row data")
 		return
 	}
 
 	_, err = db.Exec("INSERT INTO directory (data) VALUES (?)", string(jsonData))
 	if err != nil {
 		log.Printf("Failed to insert row into database: %v", err)
-		http.Error(w, "Failed to add row to database", http.StatusInternalServerError)
+		utils.InternalServerError(w, "Failed to add row to database")
 		return
 	}
 
@@ -64,8 +65,7 @@ func (app *App) handleAddRow(w http.ResponseWriter, r *http.Request) {
 		app.addRowToSheet(ctx, addRowReq.Data, directoryID)
 	}()
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	utils.RespondWithSuccess(w, nil, "Row added successfully")
 }
 
 func (app *App) addRowToSheet(ctx context.Context, rowData []string, directoryID string) {

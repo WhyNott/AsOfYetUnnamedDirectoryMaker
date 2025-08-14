@@ -15,8 +15,11 @@ import (
 type Config struct {
 	GoogleClientID     string
 	GoogleClientSecret string
+	TwitterClientID    string
+	TwitterClientSecret string
 	SessionSecret      []byte
 	RedirectURL        string
+	TwitterRedirectURL string
 	DatabasePath       string
 	Port               string
 	SheetRange         string
@@ -54,7 +57,11 @@ func LoadConfig() (*Config, error) {
 
 	config.SessionSecret = []byte(sessionSecret)
 
+	config.TwitterClientID = os.Getenv("TWITTER_CLIENT_ID")
+	config.TwitterClientSecret = os.Getenv("TWITTER_CLIENT_SECRET")
+	
 	config.RedirectURL = getEnvWithDefault("REDIRECT_URL", "http://localhost:8080/auth/callback")
+	config.TwitterRedirectURL = getEnvWithDefault("TWITTER_REDIRECT_URL", "http://localhost:8080/auth/twitter/callback")
 	config.DatabasePath = getEnvWithDefault("DATABASE_PATH", "./directory.db")
 	config.Port = getEnvWithDefault("PORT", "8080")
 	config.SheetRange = getEnvWithDefault("SHEET_RANGE", "A:Z")

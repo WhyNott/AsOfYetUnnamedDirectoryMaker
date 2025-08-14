@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Moderator Dashboard - Directory Service</title>
+    <link rel="stylesheet" href="/static/css/moderator.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Moderator Dashboard</h1>
+            <div style="color: #666;">
+                <p><strong>Directory:</strong> {{.Directory.Name}} ({{.Directory.ID}})</p>
+                <p><strong>Moderator:</strong> {{.UserEmail}}</p>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Your Permissions</h2>
+            <div class="permissions">
+                <div class="permission-card {{if .Permissions.CanEdit}}permission-yes{{else}}permission-no{{end}}">
+                    <h4>✏️ Edit Permission</h4>
+                    <p>{{if .Permissions.CanEdit}}You can edit directory entries{{else}}You cannot edit directory entries{{end}}</p>
+                </div>
+                <div class="permission-card {{if .Permissions.CanApprove}}permission-yes{{else}}permission-no{{end}}">
+                    <h4>✅ Approval Permission</h4>
+                    <p>{{if .Permissions.CanApprove}}You can approve changes from other moderators{{else}}You cannot approve changes{{end}}</p>
+                </div>
+                <div class="permission-card {{if .Permissions.RequiresApproval}}permission-yes{{else}}permission-no{{end}}">
+                    <h4>🔍 Requires Approval</h4>
+                    <p>{{if .Permissions.RequiresApproval}}Your changes require approval{{else}}Your changes are automatically approved{{end}}</p>
+                </div>
+            </div>
+            
+            <div style="margin-top: 20px;">
+                <h4>Row Access</h4>
+                {{if .Permissions.RowsAllowed}}
+                <div class="rows-allowed">
+                    {{range .Permissions.RowsAllowed}}
+                    <span class="row-badge">Row {{.}}</span>
+                    {{end}}
+                </div>
+                {{else}}
+                <p style="color: #666;">Access to all rows</p>
+                {{end}}
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Pending Changes</h2>
+            <div style="margin-bottom: 15px;">
+                <button id="loadChanges" class="button">Load Pending Changes</button>
+                <button id="refreshChanges" class="button button-secondary" style="display: none;">Refresh</button>
+            </div>
+            <div id="pendingChangesSection">
+                <p style="color: #666;">Click "Load Pending Changes" to view changes requiring approval</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Moderator Hierarchy</h2>
+            <div style="margin-bottom: 15px;">
+                <button id="loadHierarchy" class="button">Load My Appointees</button>
+            </div>
+            <div id="hierarchySection">
+                <p style="color: #666;">Click "Load My Appointees" to see moderators you've appointed</p>
+            </div>
+        </div>
+
+        <hr style="margin: 40px 0;">
+        <p><a href="{{.ViewDirectoryURL}}">View Directory</a> | <a href="/logout">Logout</a></p>
+    </div>
+    
+    <script>
+        // Pass template variables to global scope
+        window.moderatorConfig = {
+            csrfToken: '{{.CSRFToken}}',
+            directoryId: '{{.Directory.ID}}',
+            userEmail: '{{.UserEmail}}'
+        };
+    </script>
+    <script src="/static/js/moderator.js"></script>
+</body>
+</html>

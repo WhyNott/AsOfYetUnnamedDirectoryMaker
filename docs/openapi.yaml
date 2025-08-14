@@ -1,0 +1,290 @@
+openapi: 3.0.3
+info:
+  title: Directory Community Website API
+  description: API for managing community directories with multi-user support
+  version: 1.0.0
+  contact:
+    name: Directory Community Website
+    url: https://github.com/example/directory-community-website
+
+servers:
+  - url: http://localhost:8080
+    description: Development server
+
+security:
+  - sessionAuth: []
+  - csrfToken: []
+
+paths:
+  /api/directory:
+    get:
+      summary: Get directory data
+      parameters:
+        - name: dir
+          in: query
+          description: Directory ID
+          schema:
+            type: string
+            default: "default"
+      responses:
+        '200':
+          description: Directory entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DirectoryEntry'
+
+  /api/columns:
+    get:
+      summary: Get directory columns
+      parameters:
+        - name: dir
+          in: query
+          description: Directory ID
+          schema:
+            type: string
+            default: "default"
+      responses:
+        '200':
+          description: Column information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ColumnInfo'
+
+  /api/corrections:
+    post:
+      summary: Apply a correction to directory data
+      security:
+        - sessionAuth: []
+        - csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CorrectionRequest'
+      responses:
+        '200':
+          description: Correction applied successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/add-row:
+    post:
+      summary: Add a new row to directory
+      security:
+        - sessionAuth: []
+        - csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddRowRequest'
+      responses:
+        '200':
+          description: Row added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /api/delete-row:
+    delete:
+      summary: Delete a row from directory
+      security:
+        - sessionAuth: []
+        - csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteRowRequest'
+      responses:
+        '200':
+          description: Row deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: auth-session
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+
+  schemas:
+    DirectoryEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Entry ID
+        data:
+          type: string
+          description: JSON-encoded row data
+      required:
+        - id
+        - data
+
+    ColumnInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Column info ID
+        columns:
+          type: array
+          items:
+            type: string
+          description: Array of column names
+      required:
+        - id
+        - columns
+
+    CorrectionRequest:
+      type: object
+      properties:
+        row:
+          type: integer
+          minimum: 0
+          description: Row index
+        column:
+          type: integer
+          minimum: 0
+          description: Column index
+        value:
+          type: string
+          maxLength: 1000
+          description: New value
+      required:
+        - row
+        - column
+        - value
+
+    AddRowRequest:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: string
+          description: Row data as array of strings
+      required:
+        - data
+
+    DeleteRowRequest:
+      type: object
+      properties:
+        row:
+          type: integer
+          minimum: 0
+          description: Row index to delete
+        reason:
+          type: string
+          maxLength: 500
+          description: Reason for deletion
+      required:
+        - row
+        - reason
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Operation completed successfully"
+        data:
+          type: object
+          description: Optional response data
+      required:
+        - success
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error type
+        message:
+          type: string
+          description: Error message
+        code:
+          type: integer
+          description: HTTP status code
+      required:
+        - error
+        - message
+        - code
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Bad Request"
+            message: "Validation failed: Row index is required"
+            code: 400
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Unauthorized"
+            message: "Authentication required"
+            code: 401
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Forbidden"
+            message: "Insufficient permissions"
+            code: 403
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Not Found"
+            message: "Directory not found"
+            code: 404
+
+tags:
+  - name: Directory
+    description: Directory data operations
+  - name: Moderator
+    description: Moderator management
+  - name: Admin
+    description: Administrative operations

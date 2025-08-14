@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Panel - Directory Service</title>
+    <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Admin Panel - {{.Directory.Name}}</h1>
+        <div style="margin-bottom: 20px; color: #666;">
+            <p>Welcome, {{.UserEmail}}</p>
+            <p>Managing directory: <strong>{{.Directory.ID}}</strong>
+            {{if .Directory.Description}} ({{.Directory.Description}}){{end}}
+            </p>
+        </div>
+        
+        {{if .ImportSuccess}}
+        <div style="background: #d4edda; color: #155724; padding: 15px; border: 1px solid #c3e6cb; border-radius: 4px; margin-bottom: 20px;">
+            <strong>✅ Import Successful!</strong> The Google Sheet has been successfully imported into the directory.
+            <a href="{{.ViewDirectoryURL}}" style="color: #155724; text-decoration: underline; margin-left: 10px;">View Directory</a>
+        </div>
+        {{end}}
+        
+        <!-- Moderator Management Section -->
+        <div style="margin: 30px 0;">
+            <h2>Moderator Management</h2>
+            
+            <div style="margin-bottom: 20px;">
+                <button id="showModeratorForm" style="background: #17a2b8;">Add Moderator</button>
+                <button id="viewModerators" style="background: #6c757d;">View Moderators</button>
+            </div>
+            
+            <!-- Add Moderator Form -->
+            <div id="moderatorForm" style="display: none; background: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px;">
+                <h3>Appoint New Moderator</h3>
+                <div style="margin-bottom: 15px;">
+                    <label>Email:</label><br>
+                    <input type="email" id="moderatorEmail" style="width: 300px; padding: 8px;" placeholder="moderator@example.com">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label>Username:</label><br>
+                    <input type="text" id="moderatorUsername" style="width: 300px; padding: 8px;" placeholder="username">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label>Auth Provider:</label><br>
+                    <select id="authProvider" style="width: 316px; padding: 8px;">
+                        <option value="google">Google</option>
+                        <option value="twitter">Twitter/X</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label><input type="checkbox" id="canEdit" checked> Can Edit</label><br>
+                    <label><input type="checkbox" id="canApprove"> Can Approve Changes</label><br>
+                    <label><input type="checkbox" id="requiresApproval" checked> Requires Approval</label>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label>Row Access:</label><br>
+                    <div style="margin-bottom: 10px;">
+                        <label><input type="radio" name="rowAccessType" value="all" checked> All Rows</label><br>
+                        <label><input type="radio" name="rowAccessType" value="specific"> Specific Rows</label>
+                    </div>
+                    <div id="specificRowsSection" style="display: none; border: 1px solid #ddd; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto; background: #f9f9f9;">
+                        <div style="margin-bottom: 10px; font-weight: bold;">Select rows to allow access:</div>
+                        <div id="rowSelectionList">Loading rows...</div>
+                    </div>
+                </div>
+                <div>
+                    <button id="appointModerator" style="background: #28a745;">Appoint Moderator</button>
+                    <button id="cancelModerator" style="background: #6c757d;">Cancel</button>
+                </div>
+            </div>
+            
+            <!-- Moderators List -->
+            <div id="moderatorsList" style="display: none;">
+                <h3>Current Moderators</h3>
+                <div id="moderatorsContent">Loading...</div>
+            </div>
+        </div>
+        
+        <form action="{{.ImportURL}}" method="POST" id="importForm">
+            <h2>Import Google Sheet</h2>
+            <p>Enter the URL of your Google Sheet:</p>
+            <input type="url" name="sheet_url" id="sheet_url" placeholder="https://docs.google.com/spreadsheets/d/..." required>
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <br><br>
+            <button type="button" id="previewBtn">Preview Sheet</button>
+            <button type="submit" id="importBtn" style="display:none;">Import Sheet</button>
+        </form>
+        
+        <div id="previewSection" style="display:none; margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: #f9f9f9;">
+            <h3>Sheet Preview</h3>
+            <div id="previewContent"></div>
+            <div style="margin-top: 15px;">
+                <button type="button" id="confirmImport" style="background: #28a745;">Confirm Import</button>
+                <button type="button" id="cancelPreview" style="background: #666;">Cancel</button>
+            </div>
+        </div>
+        
+        <hr>
+        <p><a href="{{.ViewDirectoryURL}}">View Directory</a> | <a href="/logout">Logout</a></p>
+    </div>
+    
+    <script>
+        // Global template variables
+        window.adminConfig = {
+            csrfToken: '{{.CSRFToken}}',
+            previewURL: '{{.PreviewURL}}',
+            importURL: '{{.ImportURL}}',
+            adminURL: '{{.AdminURL}}',
+            directoryId: '{{.Directory.ID}}'
+        };
+    </script>
+    <script src="/static/js/admin.js"></script>
+</body>
+</html>

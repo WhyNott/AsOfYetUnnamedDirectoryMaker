@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"directoryCommunityWebsite/utils"
 	"golang.org/x/oauth2"
 )
 
@@ -15,38 +16,38 @@ func (app *App) handleCorrection(w http.ResponseWriter, r *http.Request) {
 	var correction CorrectionRequest
 	if err := json.NewDecoder(r.Body).Decode(&correction); err != nil {
 		log.Printf("Failed to decode correction request: %v", err)
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		utils.BadRequestError(w, "Invalid request body")
 		return
 	}
 
 	// Validate the correction request
 	if correction.Row < 0 || correction.Column < 0 {
 		log.Printf("Invalid row/column in correction: row=%d, col=%d", correction.Row, correction.Column)
-		http.Error(w, "Invalid row or column", http.StatusBadRequest)
+		utils.ValidationError(w, "Invalid row or column")
 		return
 	}
 
 	if correction.Column > 49 {
 		log.Printf("Column exceeds limit: %d", correction.Column)
-		http.Error(w, "Column exceeds maximum allowed (50)", http.StatusBadRequest)
+		utils.ValidationError(w, "Column exceeds maximum allowed (50)")
 		return
 	}
 
 	correction.Value = SanitizeInput(correction.Value)
 	if len(correction.Value) > 1000 {
 		log.Printf("Correction value too long: %d characters", len(correction.Value))
-		http.Error(w, "Value exceeds maximum length (1000 characters)", http.StatusBadRequest)
+		utils.ValidationError(w, "Value exceeds maximum length (1000 characters)")
 		return
 	}
 
 	// Get directory ID from query parameter or default to "default"
-	directoryID := GetCurrentDirectoryID(r)
+	directoryID := utils.GetDirectoryID(r)
 	
 	// Get directory-specific database connection
 	db, err := app.DirectoryDBManager.GetDirectoryDB(directoryID)
 	if err != nil {
 		log.Printf("Failed to get directory database for %s: %v", directoryID, err)
-		http.Error(w, "Directory not found", http.StatusNotFound)
+		utils.NotFoundError(w, "Directory")
 		return
 	}
 
@@ -55,7 +56,7 @@ func (app *App) handleCorrection(w http.ResponseWriter, r *http.Request) {
 	err = db.QueryRow("SELECT data FROM directory ORDER BY id LIMIT 1 OFFSET ?", correction.Row).Scan(&currentData)
 	if err != nil {
 		log.Printf("Failed to get row %d: %v", correction.Row, err)
-		http.Error(w, "Row not found", http.StatusNotFound)
+		utils.NotFoundError(w, "Row")
 		return
 	}
 
@@ -63,7 +64,7 @@ func (app *App) handleCorrection(w http.ResponseWriter, r *http.Request) {
 	var rowData []string
 	if err := json.Unmarshal([]byte(currentData), &rowData); err != nil {
 		log.Printf("Failed to unmarshal row data: %v", err)
-		http.Error(w, "Failed to parse row data", http.StatusInternalServerError)
+		utils.InternalServerError(w, "Failed to parse row data")
 		return
 	}
 
@@ -78,7 +79,7 @@ func (app *App) handleCorrection(w http.ResponseWriter, r *http.Request) {
 	// Validate the updated row data
 	if err := ValidateRowData(rowData); err != nil {
 		log.Printf("Invalid row data after correction: %v", err)
-		http.Error(w, "Invalid row data: "+err.Error(), http.StatusBadRequest)
+		utils.ValidationError(w, err.Error())
 		return
 	}
 
@@ -86,7 +87,7 @@ func (app *App) handleCorrection(w http.ResponseWriter, r *http.Request) {
 	updatedData, err := json.Marshal(rowData)
 	if err != nil {
 		log.Printf("Failed to marshal updated row data: %v", err)
-		http.Error(w, "Failed to process row data", http.StatusInternalServerError)
+		utils.InternalServerError(w, "Failed to process row data")
 		return
 	}
 
@@ -100,7 +101,7 @@ func (app *App) handleCorrection(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Printf("Failed to update database for correction: %v", err)
-		http.Error(w, "Failed to update database", http.StatusInternalServerError)
+		utils.InternalServerError(w, "Failed to update database")
 		return
 	}
 
@@ -111,8 +112,7 @@ func (app *App) handleCorrection(w http.ResponseWriter, r *http.Request) {
 		app.updateOriginalSheet(ctx, correction.Row, correction.Column, correction.Value, directoryID)
 	}()
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	utils.RespondWithSuccess(w, nil, "Correction applied successfully")
 }
 
 func (app *App) updateOriginalSheet(ctx context.Context, row, col int, value string, directoryID string) {

@@ -18,6 +18,7 @@ type App struct {
 	DB                  *sql.DB
 	SessionStore        *sessions.CookieStore
 	OAuthConfig         *oauth2.Config
+	TwitterOAuthConfig  *oauth2.Config
 	Config              *Config
 	EncryptionService   *EncryptionService
 	DirectoryDBManager  *DirectoryDatabaseManager
@@ -94,6 +95,9 @@ func main() {
 			Endpoint: google.Endpoint,
 		},
 	}
+	
+	// Initialize Twitter OAuth config if configured
+	app.TwitterOAuthConfig = app.TwitterConfig()
 
 	app.DB, err = sql.Open("sqlite3", config.DatabasePath)
 	if err != nil {
@@ -122,9 +126,12 @@ func main() {
 	r.HandleFunc("/", app.handleHome).Methods("GET")
 	//r.HandleFunc("/test", app.handleTest).Methods("GET")                // Simple test endpoint
 	//r.HandleFunc("/admin-direct", app.handleAdminDirect).Methods("GET") // Bypass OAuth for testing
-	r.HandleFunc("/login", app.handleLogin).Methods("GET")
+	r.HandleFunc("/login", app.handleLoginPage).Methods("GET")
 	r.HandleFunc("/logout", app.handleLogout).Methods("GET")
+	r.HandleFunc("/auth/google", app.handleLogin).Methods("GET")  // Renamed Google-specific login
 	r.HandleFunc("/auth/callback", app.handleAuthCallback).Methods("GET")
+	r.HandleFunc("/auth/twitter", app.handleTwitterLogin).Methods("GET")
+	r.HandleFunc("/auth/twitter/callback", app.handleTwitterCallback).Methods("GET")
 	r.HandleFunc("/admin", app.AuthMiddleware(app.handleAdmin)).Methods("GET")
 	r.HandleFunc("/import", app.AuthMiddleware(app.CSRFMiddleware(app.handleImport))).Methods("POST")
 	r.HandleFunc("/api/preview-sheet", app.AuthMiddleware(app.CSRFMiddleware(app.handlePreviewSheet))).Methods("POST")
@@ -141,8 +148,22 @@ func main() {
 	r.HandleFunc("/api/super-admin/directories", app.AuthMiddleware(app.SuperAdminMiddleware(app.handleGetAllDirectories))).Methods("GET")
 	r.HandleFunc("/api/super-admin/create-directory", app.AuthMiddleware(app.SuperAdminMiddleware(app.CSRFMiddleware(app.handleCreateDirectory)))).Methods("POST")
 	r.HandleFunc("/api/super-admin/delete-directory", app.AuthMiddleware(app.SuperAdminMiddleware(app.CSRFMiddleware(app.handleDeleteDirectory)))).Methods("DELETE")
+	
+	// Moderator management routes
+	r.HandleFunc("/api/moderators", app.AuthMiddleware(app.AdminOrModeratorMiddleware(app.handleGetModerators))).Methods("GET")
+	r.HandleFunc("/api/moderators/appoint", app.AuthMiddleware(app.AdminOrModeratorMiddleware(app.CSRFMiddleware(app.handleAppointModerator)))).Methods("POST")
+	r.HandleFunc("/api/moderators/remove", app.AuthMiddleware(app.AdminOrModeratorMiddleware(app.CSRFMiddleware(app.handleRemoveModerator)))).Methods("DELETE")
+	r.HandleFunc("/api/moderators/permissions", app.AuthMiddleware(app.ModeratorMiddleware(app.handleGetModeratorPermissions))).Methods("GET")
+	r.HandleFunc("/api/moderators/hierarchy", app.AuthMiddleware(app.ModeratorMiddleware(app.handleGetModeratorHierarchy))).Methods("GET")
+	
+	// Change approval routes
+	r.HandleFunc("/api/changes/pending", app.AuthMiddleware(app.ModeratorMiddleware(app.handleGetPendingChanges))).Methods("GET")
+	r.HandleFunc("/api/changes/approve", app.AuthMiddleware(app.ModeratorMiddleware(app.CSRFMiddleware(app.handleApproveChange)))).Methods("POST")
+	
+	// Moderator dashboard
+	r.HandleFunc("/moderator", app.AuthMiddleware(app.ModeratorMiddleware(app.handleModeratorDashboard))).Methods("GET")
 
-	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
+	r.PathPrefix("/static/").Handler(StaticCacheMiddleware(http.StripPrefix("/static/", http.FileServer(http.Dir("./static/")))))
 
 	AppLogger.WithField("port", config.Port).Info("Server starting")
 	if err := http.ListenAndServe(":"+config.Port, r); err != nil {
@@ -188,6 +209,73 @@ func (app *App) initDatabase() error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_email TEXT NOT NULL UNIQUE,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		
+		CREATE TABLE IF NOT EXISTS moderators (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_email TEXT NOT NULL,
+			username TEXT NOT NULL,
+			auth_provider TEXT NOT NULL DEFAULT 'google', -- 'google' or 'twitter'
+			directory_id TEXT NOT NULL,
+			appointed_by TEXT NOT NULL, -- email of the user who appointed them
+			appointed_by_type TEXT NOT NULL DEFAULT 'admin', -- 'admin' or 'moderator'
+			is_active BOOLEAN DEFAULT TRUE,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (directory_id) REFERENCES directories(id),
+			UNIQUE(user_email, directory_id)
+		);
+		
+		CREATE TABLE IF NOT EXISTS moderator_hierarchy (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			parent_moderator_email TEXT NOT NULL,
+			child_moderator_email TEXT NOT NULL,
+			directory_id TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (directory_id) REFERENCES directories(id),
+			UNIQUE(parent_moderator_email, child_moderator_email, directory_id)
+		);
+		
+		CREATE TABLE IF NOT EXISTS moderator_domains (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			moderator_email TEXT NOT NULL,
+			directory_id TEXT NOT NULL,
+			row_filter TEXT, -- JSON array of row IDs or filter conditions
+			can_edit BOOLEAN DEFAULT TRUE,
+			can_approve BOOLEAN DEFAULT FALSE,
+			requires_approval BOOLEAN DEFAULT TRUE,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (directory_id) REFERENCES directories(id),
+			UNIQUE(moderator_email, directory_id)
+		);
+		
+		CREATE TABLE IF NOT EXISTS pending_changes (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			directory_id TEXT NOT NULL,
+			row_id INTEGER NOT NULL,
+			column_name TEXT NOT NULL,
+			old_value TEXT,
+			new_value TEXT NOT NULL,
+			change_type TEXT NOT NULL, -- 'edit', 'add', 'delete'
+			submitted_by TEXT NOT NULL, -- moderator email
+			status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+			reviewed_by TEXT, -- approver email
+			reviewed_at DATETIME,
+			reason TEXT, -- reason for rejection or notes
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (directory_id) REFERENCES directories(id)
+		);
+		
+		CREATE TABLE IF NOT EXISTS user_profiles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_email TEXT NOT NULL UNIQUE,
+			username TEXT NOT NULL,
+			auth_provider TEXT NOT NULL, -- 'google' or 'twitter'
+			provider_id TEXT NOT NULL, -- unique ID from the auth provider
+			avatar_url TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 	`
 	if _, err := app.DB.Exec(query); err != nil {

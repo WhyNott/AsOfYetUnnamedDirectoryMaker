@@ -15,11 +15,13 @@ import (
 type contextKey string
 
 const (
-	UserEmailKey     contextKey = "user_email"
-	CSRFTokenKey     contextKey = "csrf_token"
-	AuthenticatedKey contextKey = "authenticated"
-	DirectoryIDKey   contextKey = "directory_id"
-	IsSuperAdminKey  contextKey = "is_super_admin"
+	UserEmailKey      contextKey = "user_email"
+	CSRFTokenKey      contextKey = "csrf_token"
+	AuthenticatedKey  contextKey = "authenticated"
+	DirectoryIDKey    contextKey = "directory_id"
+	IsSuperAdminKey   contextKey = "is_super_admin"
+	IsModeratorKey    contextKey = "is_moderator"
+	UserTypeKey       contextKey = "user_type"
 )
 
 func (app *App) LoggingMiddleware(next http.Handler) http.Handler {
@@ -105,6 +107,86 @@ func (app *App) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
+}
+
+// TemplateContextMiddleware adds common template data to the request context
+func (app *App) TemplateContextMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		
+		// Get directory ID
+		directoryID := r.URL.Query().Get("dir")
+		if directoryID == "" {
+			directoryID = "default"
+		}
+		ctx = context.WithValue(ctx, DirectoryIDKey, directoryID)
+		
+		// Check if user is authenticated
+		userEmail, isAuthenticated := ctx.Value(UserEmailKey).(string)
+		if isAuthenticated {
+			// Get user permissions
+			isSuperAdmin, _ := app.IsSuperAdmin(userEmail)
+			isDirectoryOwner, _ := app.IsDirectoryOwner(directoryID, userEmail)
+			isModerator, _ := app.IsModerator(userEmail, directoryID)
+			
+			// Get user type
+			userType, _ := app.GetUserType(userEmail, directoryID)
+			
+			// Add to context
+			ctx = context.WithValue(ctx, IsSuperAdminKey, isSuperAdmin)
+			ctx = context.WithValue(ctx, IsModeratorKey, isModerator)
+			ctx = context.WithValue(ctx, UserTypeKey, userType)
+			
+			// Add a computed "IsDirectoryOwner" context value
+			ctx = context.WithValue(ctx, contextKey("IsDirectoryOwner"), isDirectoryOwner)
+		}
+		
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}
+}
+
+// StaticCacheMiddleware adds cache headers for static assets
+func StaticCacheMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Get file extension
+		path := r.URL.Path
+		
+		// Set cache headers based on file type
+		if strings.HasSuffix(path, ".css") || strings.HasSuffix(path, ".js") {
+			// CSS and JS files - cache for 1 week
+			w.Header().Set("Cache-Control", "public, max-age=604800")
+			w.Header().Set("Vary", "Accept-Encoding")
+		} else if strings.HasSuffix(path, ".png") || strings.HasSuffix(path, ".jpg") || 
+			     strings.HasSuffix(path, ".jpeg") || strings.HasSuffix(path, ".gif") || 
+			     strings.HasSuffix(path, ".svg") || strings.HasSuffix(path, ".ico") {
+			// Images - cache for 1 month
+			w.Header().Set("Cache-Control", "public, max-age=2592000")
+		} else if strings.HasSuffix(path, ".woff") || strings.HasSuffix(path, ".woff2") || 
+			     strings.HasSuffix(path, ".ttf") || strings.HasSuffix(path, ".otf") {
+			// Fonts - cache for 1 year
+			w.Header().Set("Cache-Control", "public, max-age=31536000")
+		} else {
+			// Other static files - cache for 1 day
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+		}
+		
+		// Add ETag for better caching
+		if stat, err := http.Dir("./static/").Open(strings.TrimPrefix(path, "/static/")); err == nil {
+			if fileInfo, err := stat.Stat(); err == nil {
+				etag := fmt.Sprintf(`"%x-%x"`, fileInfo.ModTime().Unix(), fileInfo.Size())
+				w.Header().Set("ETag", etag)
+				
+				// Check if client has the file cached
+				if match := r.Header.Get("If-None-Match"); match == etag {
+					w.WriteHeader(http.StatusNotModified)
+					return
+				}
+			}
+			stat.Close()
+		}
+		
+		next.ServeHTTP(w, r)
+	})
 }
 
 // DirectoryAuthMiddleware checks if user has access to a specific directory
@@ -194,6 +276,84 @@ func (app *App) SuperAdminMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		ctx := context.WithValue(r.Context(), IsSuperAdminKey, true)
+		ctx = context.WithValue(ctx, UserTypeKey, UserTypeSuperAdmin)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}
+}
+
+// ModeratorMiddleware requires moderator privileges for a directory
+func (app *App) ModeratorMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userEmail, ok := r.Context().Value(UserEmailKey).(string)
+		if !ok {
+			http.Error(w, "User not authenticated", http.StatusUnauthorized)
+			return
+		}
+		
+		directoryID := GetCurrentDirectoryID(r)
+		
+		// Get user type for this directory
+		userType, err := app.GetUserType(userEmail, directoryID)
+		if err != nil {
+			log.Printf("Error checking user type: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		
+		// Allow super admins, admins, and moderators
+		if userType != UserTypeSuperAdmin && userType != UserTypeAdmin && userType != UserTypeModerator {
+			http.Error(w, "Access denied - moderator privileges required", http.StatusForbidden)
+			return
+		}
+		
+		ctx := context.WithValue(r.Context(), UserTypeKey, userType)
+		ctx = context.WithValue(ctx, DirectoryIDKey, directoryID)
+		
+		if userType == UserTypeSuperAdmin {
+			ctx = context.WithValue(ctx, IsSuperAdminKey, true)
+		} else if userType == UserTypeModerator {
+			ctx = context.WithValue(ctx, IsModeratorKey, true)
+		}
+		
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}
+}
+
+// AdminOrModeratorMiddleware requires admin or moderator privileges
+func (app *App) AdminOrModeratorMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userEmail, ok := r.Context().Value(UserEmailKey).(string)
+		if !ok {
+			http.Error(w, "User not authenticated", http.StatusUnauthorized)
+			return
+		}
+		
+		directoryID := GetCurrentDirectoryID(r)
+		
+		// Get user type for this directory
+		userType, err := app.GetUserType(userEmail, directoryID)
+		if err != nil {
+			log.Printf("Error checking user type: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		
+		// Allow super admins, admins, and moderators
+		if userType == "" {
+			http.Error(w, "Access denied - admin or moderator privileges required", http.StatusForbidden)
+			return
+		}
+		
+		ctx := context.WithValue(r.Context(), UserTypeKey, userType)
+		ctx = context.WithValue(ctx, DirectoryIDKey, directoryID)
+		
+		switch userType {
+		case UserTypeSuperAdmin:
+			ctx = context.WithValue(ctx, IsSuperAdminKey, true)
+		case UserTypeModerator:
+			ctx = context.WithValue(ctx, IsModeratorKey, true)
+		}
+		
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }

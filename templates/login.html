@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login - Directory Service</title>
+    <link rel="stylesheet" href="/static/css/login.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Login to Directory Service</h1>
+        
+        <a href="/auth/google" class="login-btn google-btn">
+            Continue with Google
+        </a>
+        
+        {{if .HasTwitter}}
+        <div class="divider">or</div>
+        
+        <a href="/auth/twitter" class="login-btn twitter-btn">
+            Continue with Twitter/X
+        </a>
+        
+        <div class="note">
+            <strong>Note:</strong> Twitter/X login is available for moderators only.
+        </div>
+        {{end}}
+    </div>
+</body>
+</html>
