@@ -1,13 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Admin Panel - Directory Service</title>
-    <link rel="stylesheet" href="/css/owner.css">
+    <title>Owner Panel - Directory Service</title>
+    <link rel="stylesheet" href="/static/css/owner.css">
+    <link rel="stylesheet" href="https://latex.vercel.app/style.css">
 </head>
 <body>
     <div class="container">
         <h1>Owner Panel - {{.Directory.Name}}</h1>
-        <div style="margin-bottom: 20px; color: #666;">
+        <div>
             <p>Welcome, {{.UserEmail}}</p>
             <p>Managing directory: <strong>{{.Directory.ID}}</strong>
             {{if .Directory.Description}} ({{.Directory.Description}}){{end}}
@@ -15,58 +16,58 @@
         </div>
         
         {{if .ImportSuccess}}
-        <div style="background: #d4edda; color: #155724; padding: 15px; border: 1px solid #c3e6cb; border-radius: 4px; margin-bottom: 20px;">
+        <div>
             <strong>✅ Import Successful!</strong> The Google Sheet has been successfully imported into the directory.
-            <a href="{{.ViewDirectoryURL}}" style="color: #155724; text-decoration: underline; margin-left: 10px;">View Directory</a>
+            <a href="{{.ViewDirectoryURL}}">View Directory</a>
         </div>
         {{end}}
         
         <!-- Moderator Management Section -->
-        <div style="margin: 30px 0;">
+        <div>
             <h2>Moderator Management</h2>
             
-            <div style="margin-bottom: 20px;">
-                <button id="showModeratorForm" style="background: #17a2b8;">Add Moderator</button>
-                <button id="viewModerators" style="background: #6c757d;">View Moderators</button>
+            <div>
+                <button id="showModeratorForm">Add Moderator</button>
+                <button id="viewModerators">View Moderators</button>
             </div>
             
             <!-- Add Moderator Form -->
-            <div id="moderatorForm" style="display: none; background: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px;">
+            <div id="moderatorForm" style="display: none;">
                 <h3>Appoint New Moderator</h3>
-                <div style="margin-bottom: 15px;">
-                    <label>Email:</label><br>
-                    <input type="email" id="moderatorEmail" style="width: 300px; padding: 8px;" placeholder="moderator@example.com">
+                <div class="form-group">
+                    <label>Email:</label>
+                    <input type="email" id="moderatorEmail" placeholder="moderator@example.com">
                 </div>
-                <div style="margin-bottom: 15px;">
-                    <label>Username:</label><br>
-                    <input type="text" id="moderatorUsername" style="width: 300px; padding: 8px;" placeholder="username">
+                <div class="form-group">
+                    <label>Username:</label>
+                    <input type="text" id="moderatorUsername" placeholder="username">
                 </div>
-                <div style="margin-bottom: 15px;">
-                    <label>Auth Provider:</label><br>
-                    <select id="authProvider" style="width: 316px; padding: 8px;">
+                <div class="form-group">
+                    <label>Auth Provider:</label>
+                    <select id="authProvider">
                         <option value="google">Google</option>
                         <option value="twitter">Twitter/X</option>
                     </select>
                 </div>
-                <div style="margin-bottom: 15px;">
+                <div class="form-group">
                     <label><input type="checkbox" id="canEdit" checked> Can Edit</label><br>
                     <label><input type="checkbox" id="canApprove"> Can Approve Changes</label><br>
                     <label><input type="checkbox" id="requiresApproval" checked> Requires Approval</label>
                 </div>
-                <div style="margin-bottom: 15px;">
-                    <label>Row Access:</label><br>
-                    <div style="margin-bottom: 10px;">
+                <div class="form-group">
+                    <label>Row Access:</label>
+                    <div>
                         <label><input type="radio" name="rowAccessType" value="all" checked> All Rows</label><br>
                         <label><input type="radio" name="rowAccessType" value="specific"> Specific Rows</label>
                     </div>
-                    <div id="specificRowsSection" style="display: none; border: 1px solid #ddd; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto; background: #f9f9f9;">
-                        <div style="margin-bottom: 10px; font-weight: bold;">Select rows to allow access:</div>
+                    <div id="specificRowsSection" style="display: none;">
+                        <div>Select rows to allow access:</div>
                         <div id="rowSelectionList">Loading rows...</div>
                     </div>
                 </div>
                 <div>
-                    <button id="appointModerator" style="background: #28a745;">Appoint Moderator</button>
-                    <button id="cancelModerator" style="background: #6c757d;">Cancel</button>
+                    <button id="appointModerator">Appoint Moderator</button>
+                    <button id="cancelModerator">Cancel</button>
                 </div>
             </div>
             
@@ -87,12 +88,12 @@
             <button type="submit" id="importBtn" style="display:none;">Import Sheet</button>
         </form>
         
-        <div id="previewSection" style="display:none; margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: #f9f9f9;">
+        <div id="previewSection" style="display:none;">
             <h3>Sheet Preview</h3>
             <div id="previewContent"></div>
-            <div style="margin-top: 15px;">
-                <button type="button" id="confirmImport" style="background: #28a745;">Confirm Import</button>
-                <button type="button" id="cancelPreview" style="background: #666;">Cancel</button>
+            <div>
+                <button type="button" id="confirmImport">Confirm Import</button>
+                <button type="button" id="cancelPreview">Cancel</button>
             </div>
         </div>
         
@@ -110,6 +111,6 @@
             directoryId: '{{.Directory.ID}}'
         };
     </script>
-    <script src="/js/owner.js"></script>
+    <script src="/static/js/owner.js"></script>
 </body>
 </html>
