@@ -1,12 +1,15 @@
 let db;
 let directoryData = [];
 let columnNames = [];
+let columnTypes = [];
 let currentRow = -1;
 let currentCol = -1;
 let maxColumns = 0;
 let csrfToken = null;
 let deleteRowIndex = -1;
 let currentDirectoryID = 'default';
+let formControlGenerator = null;
+let filteredData = [];
 
 // Get directory ID from URL parameters
 function getCurrentDirectoryID() {
@@ -46,8 +49,8 @@ initSqlJs({
 
 async function loadDirectory() {
     try {
-        // Load column names first
-        await loadColumnNames();
+        // Load column metadata first
+        await loadColumnMetadata();
         
         const response = await fetch(buildAPIURL('/download/directory.db'), {
             method: 'GET',
@@ -82,40 +85,91 @@ async function loadDirectory() {
     }
 }
 
-async function loadColumnNames() {
+async function loadColumnMetadata() {
     try {
-        const response = await fetch(buildAPIURL('/api/columns'), {
+        // Load column metadata from the _meta_directory_column_types table
+        const response = await fetch(buildAPIURL('/download/directory.db'), {
             method: 'GET',
             credentials: 'same-origin'
         });
-        if (response.ok) {
-            columnNames = await response.json();
-        } else {
-            // Fallback to default column names
+        if (!response.ok) {
             columnNames = [];
+            columnTypes = [];
+            return;
         }
+        
+        const arrayBuffer = await response.arrayBuffer();
+        const uInt8Array = new Uint8Array(arrayBuffer);
+        
+        const SQL = await initSqlJs({
+            locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+        });
+        
+        const metaDb = new SQL.Database(uInt8Array);
+        
+        // Get column metadata for the current directory
+        const tableName = getCurrentDirectoryID();
+        const stmt = metaDb.prepare(`SELECT columnName, columnType FROM _meta_directory_column_types WHERE columnTable = ? ORDER BY columnName`);
+        stmt.bind([tableName]);
+        
+        const columns = [];
+        const types = [];
+        
+        while (stmt.step()) {
+            const row = stmt.getAsObject();
+            columns.push(row.columnName);
+            types.push(row.columnType);
+        }
+        
+        stmt.free();
+        metaDb.close();
+        
+        columnNames = columns;
+        columnTypes = types;
+        
     } catch (error) {
-        console.error('Error loading column names:', error);
+        console.error('Error loading column metadata:', error);
         columnNames = [];
+        columnTypes = [];
     }
 }
 
 function loadDirectoryData() {
     try {
-        const stmt = db.prepare("SELECT id, data FROM directory ORDER BY id");
+        const tableName = getCurrentDirectoryID();
+        
+        // Build dynamic SELECT statement using column names
+        let selectColumns;
+        if (columnNames.length > 0) {
+            selectColumns = columnNames.map(col => `\`${col}\``).join(', ');
+        } else {
+            selectColumns = '*';
+        }
+        
+        const stmt = db.prepare(`SELECT ${selectColumns} FROM \`${tableName}\``);
         const rows = [];
         
         while (stmt.step()) {
             const row = stmt.getAsObject();
+            // Convert row object to array format for compatibility with existing rendering code
+            const dataArray = columnNames.length > 0 
+                ? columnNames.map(col => row[col] || '')
+                : Object.values(row);
+            
             rows.push({
-                id: row.id,
-                data: JSON.parse(row.data)
+                id: rows.length, // Use array index as ID since we don't have a dedicated ID column
+                data: dataArray
             });
         }
         
         stmt.free();
         
         directoryData = rows;
+        filteredData = [...rows]; // Initialize filtered data
+        
+        // Generate filtering controls if we have column types
+        generateFilteringControls();
+        
         renderTable();
         
         document.getElementById('loading').style.display = 'none';
@@ -130,18 +184,24 @@ function loadDirectoryData() {
 }
 
 function renderTable() {
-    if (directoryData.length === 0) {
+    renderFilteredTable(filteredData.length > 0 ? filteredData : directoryData);
+}
+
+function renderFilteredTable(dataToRender) {
+    if (!dataToRender || dataToRender.length === 0) {
         document.getElementById('loading').textContent = 'No directory entries found.';
         return;
     }
     
     // Determine the maximum number of columns
-    maxColumns = 0;
-    directoryData.forEach(row => {
-        if (row.data.length > maxColumns) {
-            maxColumns = row.data.length;
-        }
-    });
+    maxColumns = columnNames.length > 0 ? columnNames.length : 0;
+    if (maxColumns === 0) {
+        dataToRender.forEach(row => {
+            if (row.data.length > maxColumns) {
+                maxColumns = row.data.length;
+            }
+        });
+    }
     
     // Create header
     const headerRow = document.getElementById('tableHeader');
@@ -166,7 +226,7 @@ function renderTable() {
     const tbody = document.getElementById('tableBody');
     tbody.innerHTML = '';
     
-    directoryData.forEach((entry, rowIndex) => {
+    dataToRender.forEach((entry, rowIndex) => {
         const tr = document.createElement('tr');
         
         for (let colIndex = 0; colIndex < maxColumns; colIndex++) {
@@ -205,7 +265,15 @@ function renderTable() {
 }
 
 function updateRecordCount() {
-    document.getElementById('recordCount').textContent = `${directoryData.length} records`;
+    const displayCount = filteredData.length;
+    const totalCount = directoryData.length;
+    
+    let countText = `${displayCount} records`;
+    if (displayCount !== totalCount) {
+        countText += ` (filtered from ${totalCount} total)`;
+    }
+    
+    document.getElementById('recordCount').textContent = countText;
 }
 
 function openCorrectionModal(row, col, currentValue) {
@@ -486,42 +554,156 @@ function debounce(func, wait) {
     };
 }
 
-// Update search to use debounced function
-const debouncedSearch = debounce(function(searchTerm) {
-    const rows = document.querySelectorAll('#tableBody tr');
+// Generate filtering controls based on column types
+function generateFilteringControls() {
+    const filterContainer = document.getElementById('filterControls');
+    if (!filterContainer || columnNames.length === 0) {
+        return;
+    }
     
-    rows.forEach(row => {
-        const cells = row.querySelectorAll('td');
-        let matchFound = false;
-        
-        cells.forEach(cell => {
-            if (cell.textContent.toLowerCase().includes(searchTerm)) {
-                matchFound = true;
-            }
-        });
-        
-        row.style.display = matchFound ? '' : 'none';
+    // Initialize form control generator if not already done
+    if (!formControlGenerator) {
+        formControlGenerator = new FormControlGenerator('filterControls', 'basicFilterFields');
+    }
+    
+    // Create field pairs from column names and types
+    const fieldPairs = columnNames.map((name, index) => {
+        const type = columnTypes[index] || 'basic';
+        return [name, type];
     });
-}, 300);
+    
+    formControlGenerator.generateControls(fieldPairs);
+    
+    // Add apply filters button
+    const applyButton = document.createElement('button');
+    applyButton.textContent = 'Apply Filters';
+    applyButton.className = 'btn btn-primary';
+    applyButton.addEventListener('click', applyFilters);
+    
+    const clearButton = document.createElement('button');
+    clearButton.textContent = 'Clear Filters';
+    clearButton.className = 'btn btn-secondary';
+    clearButton.addEventListener('click', clearFilters);
+    
+    const buttonGroup = document.createElement('div');
+    buttonGroup.className = 'filter-button-group';
+    buttonGroup.appendChild(applyButton);
+    buttonGroup.appendChild(clearButton);
+    
+    filterContainer.appendChild(buttonGroup);
+}
 
-// Replace the existing search event listener
-document.getElementById('searchBox').removeEventListener('input', function(e) {
-    const searchTerm = e.target.value.toLowerCase();
-    const rows = document.querySelectorAll('#tableBody tr');
+// Apply filters based on control values
+function applyFilters() {
+    if (!formControlGenerator) {
+        return;
+    }
     
-    rows.forEach(row => {
-        const cells = row.querySelectorAll('td');
-        let matchFound = false;
+    const filterValues = formControlGenerator.getAllValues();
+    filteredData = directoryData.filter(row => {
+        return matchesFilters(row, filterValues);
+    });
+    
+    renderTable();
+}
+
+// Clear all filters
+function clearFilters() {
+    if (formControlGenerator) {
+        formControlGenerator.clear();
+        generateFilteringControls();
+    }
+    
+    filteredData = [...directoryData];
+    renderTable();
+    
+    // Clear search box as well
+    const searchBox = document.getElementById('searchBox');
+    if (searchBox) {
+        searchBox.value = '';
+    }
+}
+
+// Check if a row matches the current filters
+function matchesFilters(row, filterValues) {
+    for (const [columnName, filterData] of Object.entries(filterValues.controls)) {
+        const columnIndex = columnNames.indexOf(columnName);
+        if (columnIndex === -1) continue;
         
-        cells.forEach(cell => {
-            if (cell.textContent.toLowerCase().includes(searchTerm)) {
-                matchFound = true;
+        const cellValue = row.data[columnIndex] || '';
+        
+        switch (filterData.type) {
+            case 'tag':
+            case 'category':
+            case 'location':
+                if (filterData.value && filterData.value.length > 0) {
+                    const cellTags = cellValue.split(',').map(tag => tag.trim().toLowerCase());
+                    const filterTags = filterData.value.map(tag => tag.toLowerCase());
+                    const hasMatch = filterTags.some(filterTag => 
+                        cellTags.some(cellTag => cellTag.includes(filterTag))
+                    );
+                    if (!hasMatch) return false;
+                }
+                break;
+                
+            case 'numeric':
+                const numValue = parseFloat(cellValue);
+                if (!isNaN(numValue) && filterData.value) {
+                    if (filterData.value.min !== null && numValue < filterData.value.min) {
+                        return false;
+                    }
+                    if (filterData.value.max !== null && numValue > filterData.value.max) {
+                        return false;
+                    }
+                }
+                break;
+        }
+    }
+    
+    return true;
+}
+
+// Update search to use debounced function and work with filtered data
+// Search only applies to basic fields (non-control fields)
+const debouncedSearch = debounce(function(searchTerm) {
+    if (searchTerm.trim() === '') {
+        // If no search term, show all filtered data
+        renderFilteredTable(filteredData);
+        return;
+    }
+    
+    // Get basic field indices (fields that don't have special controls)
+    const basicFieldIndices = [];
+    if (formControlGenerator && formControlGenerator.basicFields) {
+        formControlGenerator.basicFields.forEach(fieldName => {
+            const index = columnNames.indexOf(fieldName);
+            if (index !== -1) {
+                basicFieldIndices.push(index);
             }
         });
-        
-        row.style.display = matchFound ? '' : 'none';
+    }
+    
+    // If no basic fields are defined, fall back to searching all fields
+    if (basicFieldIndices.length === 0) {
+        const searchFiltered = filteredData.filter(row => {
+            return row.data.some(cellValue => {
+                return cellValue && cellValue.toString().toLowerCase().includes(searchTerm);
+            });
+        });
+        renderFilteredTable(searchFiltered);
+        return;
+    }
+    
+    // Filter the already filtered data by search term, but only in basic fields
+    const searchFiltered = filteredData.filter(row => {
+        return basicFieldIndices.some(columnIndex => {
+            const cellValue = row.data[columnIndex];
+            return cellValue && cellValue.toString().toLowerCase().includes(searchTerm);
+        });
     });
-});
+    
+    renderFilteredTable(searchFiltered);
+}, 300);
 
 document.getElementById('searchBox').addEventListener('input', function(e) {
     const searchTerm = e.target.value.toLowerCase();

@@ -53,9 +53,10 @@ type PreviewRequest struct {
 }
 
 type PreviewResponse struct {
-	Columns   []string `json:"columns"`
-	RowCount  int      `json:"row_count"`
-	SheetName string   `json:"sheet_name"`
+	Columns     []string `json:"columns"`
+	ColumnTypes []string `json:"column_types"`
+	RowCount    int      `json:"row_count"`
+	SheetName   string   `json:"sheet_name"`
 }
 
 func main() {
@@ -293,9 +294,7 @@ func (app *App) initDatabase() error {
 		log.Printf("Note: Could not add directory_id column to admin_sessions: %v", err)
 		// This is not a fatal error, column might already exist
 	}
-
-	// Migrate to multi-directory system if needed
-	return app.MigrateToMultiDirectory()
+	return nil
 }
 
 func (app *App) handleTest(w http.ResponseWriter, r *http.Request) {

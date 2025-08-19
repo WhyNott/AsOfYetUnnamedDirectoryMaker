@@ -9,6 +9,7 @@ import (
 )
 
 // DirectoryDatabaseManager manages connections to directory-specific databases
+// TODO: it seems to me that this is doing the same thing as directory_manager.go
 type DirectoryDatabaseManager struct {
 	connections map[string]*sql.DB
 	mutex       sync.RWMutex

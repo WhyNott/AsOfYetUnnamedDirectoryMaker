@@ -144,7 +144,7 @@ func (app *App) updateOriginalSheet(ctx context.Context, row, col int, value str
 	fmt.Printf("Successfully updated sheet cell at row %d, column %d with value: %s\n", row, col, value)
 
 	// Re-import the sheet to refresh our database
-	if err := app.importFromSheet(ctx, spreadsheetID, &token, directoryID); err != nil {
+	if err := app.reimportSheet(ctx, spreadsheetID, &token, directoryID); err != nil {
 		fmt.Printf("Failed to re-import sheet after update: %v\n", err)
 	} else {
 		fmt.Println("Successfully re-imported sheet data")

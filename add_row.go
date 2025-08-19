@@ -97,7 +97,7 @@ func (app *App) addRowToSheet(ctx context.Context, rowData []string, directoryID
 	fmt.Printf("Successfully added new row to sheet with data: %v\n", rowData)
 
 	// Re-import the sheet to refresh our database
-	if err := app.importFromSheet(ctx, spreadsheetID, &token, directoryID); err != nil {
+	if err := app.reimportSheet(ctx, spreadsheetID, &token, directoryID); err != nil {
 		fmt.Printf("Failed to re-import sheet after adding row: %v\n", err)
 	} else {
 		fmt.Println("Successfully re-imported sheet data after adding row")

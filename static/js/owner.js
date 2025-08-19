@@ -1,6 +1,11 @@
 // owner Panel JavaScript
 // Uses global window.ownerConfig set by template
 
+if (!window.ownerConfig) {
+    console.error('window.ownerConfig is not defined. Check that the template is loading correctly.');
+    throw new Error('Configuration not found');
+}
+
 const { csrfToken, previewURL, importURL, ownerURL, directoryId } = window.ownerConfig;
 
 // Sheet Import Functions
@@ -48,6 +53,22 @@ document.getElementById('confirmImport').addEventListener('click', async functio
     const form = document.getElementById('importForm');
     const formData = new FormData(form);
     
+    // Add column names and types from the preview section
+    const previewContent = document.getElementById('previewContent');
+    if (previewContent) {
+        // Get all column type selects and hidden column name inputs
+        const columnTypeSelects = previewContent.querySelectorAll('select[name^="column_type_"]');
+        const columnNameInputs = previewContent.querySelectorAll('input[name^="column_name_"]');
+        
+        columnTypeSelects.forEach(select => {
+            formData.append(select.name, select.value);
+        });
+        
+        columnNameInputs.forEach(input => {
+            formData.append(input.name, input.value);
+        });
+    }
+    
     try {
         const response = await fetch(importURL, {
             method: 'POST',
@@ -79,18 +100,33 @@ document.getElementById('cancelPreview').addEventListener('click', function() {
 function showPreview(preview) {
     const content = document.getElementById('previewContent');
     
-    let html = '<div style="margin-bottom: 10px;">';
+    let html = '<div class="sheet-info">';
     html += '<strong>Sheet Name:</strong> ' + escapeHtml(preview.sheet_name) + '<br>';
     html += '<strong>Data Rows:</strong> ' + preview.row_count + '<br>';
     html += '<strong>Columns (' + preview.columns.length + '):</strong>';
     html += '</div>';
     
-    html += '<div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">';
+    html += '<div class="column-config">';
+    html += '<p><strong>Configure Column Types:</strong></p>';
+    html += '<div class="column-list">';
+    
     preview.columns.forEach((column, index) => {
-        html += '<span style="background: #e3f2fd; padding: 4px 8px; border-radius: 3px; border: 1px solid #bbdefb; font-size: 12px;">';
-        html += (index + 1) + '. ' + escapeHtml(column);
-        html += '</span>';
+        html += '<div class="column-item">';
+        html += '<div class="column-name">' + (index + 1) + '. ' + escapeHtml(column) + '</div>';
+        html += '<div class="column-type-selector">';
+        html += '<label for="column_type_' + index + '">Type:</label>';
+        html += '<select id="column_type_' + index + '" name="column_type_' + index + '">';
+        html += '<option value="basic"' + (preview.column_types[index] === 'basic' ? ' selected' : '') + '>Basic</option>';
+        html += '<option value="numeric"' + (preview.column_types[index] === 'numeric' ? ' selected' : '') + '>Numeric</option>';
+        html += '<option value="location"' + (preview.column_types[index] === 'location' ? ' selected' : '') + '>Location</option>';
+        html += '<option value="tag"' + (preview.column_types[index] === 'tag' ? ' selected' : '') + '>Tag</option>';
+        html += '<option value="category"' + (preview.column_types[index] === 'category' ? ' selected' : '') + '>Category</option>';
+        html += '</select>';
+        html += '</div>';
+        html += '<input type="hidden" name="column_name_' + index + '" value="' + escapeHtml(column) + '">';
+        html += '</div>';
     });
+    html += '</div>';
     html += '</div>';
     
     content.innerHTML = html;

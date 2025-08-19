@@ -5,7 +5,11 @@
     <meta name="csrf-token" content="{{.CSRFToken}}">
     <link rel="stylesheet" href="/static/css/home.css">
     <!-- <link rel="stylesheet" href="https://matcha.mizu.sh/matcha.css"> -->
-    <link rel="stylesheet" href="https://latex.vercel.app/style.css"> 
+    <link rel="stylesheet" href="https://latex.vercel.app/style.css">
+    
+    <!-- Dependencies for filtering controls -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/selectize.js/0.15.2/css/selectize.default.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css"> 
 </head>
 <body>
     <div class="container">
@@ -53,6 +57,13 @@
             <button id="addRowBtn" class="add-row-btn">Add New Row</button>
             <span id="recordCount"></span>
         </div>
+        
+        <!-- Filtering Controls Section -->
+        <section>
+            <h3>🔍 Filter Directory</h3>
+            <div id="filterControls"></div>
+            <div id="basicFilterFields"></div>
+        </section>
         
         <div id="loading">Loading directory...</div>
         <table id="directoryTable">
@@ -106,7 +117,14 @@
         </div>
     </div>
 
+    <!-- Dependencies -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/selectize.js/0.15.2/js/selectize.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+    
+    <!-- Application Scripts -->
+    <script src="/static/js/forms_control_generator.js"></script>
     <script src="/static/js/home.js"></script>
     <script>
         // Pass template variables to global scope

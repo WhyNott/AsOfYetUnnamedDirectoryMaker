@@ -16,6 +16,224 @@ import (
 	"google.golang.org/api/sheets/v4"
 )
 
+func (app *App) importDirectoryFromSheet(
+	ctx context.Context, spreadsheetID string,
+	token *oauth2.Token, directoryID string,
+	columnNames []string, columnTypes []string,
+) error {
+	client := app.OAuthConfig.Client(ctx, token)
+
+	srv, err := sheets.NewService(ctx, option.WithHTTPClient(client))
+	if err != nil {
+		return fmt.Errorf("unable to retrieve Sheets client: %v", err)
+	}
+
+	resp, err := srv.Spreadsheets.Values.Get(spreadsheetID, app.Config.SheetRange).Do()
+	if err != nil {
+		return fmt.Errorf("unable to retrieve data from sheet: %v", err)
+	}
+
+	if len(resp.Values) == 0 {
+		return fmt.Errorf("no data found in sheet")
+	}
+
+	// Validate column names match the sheet header
+	if len(resp.Values) > 0 {
+		sheetColumns := make([]string, len(resp.Values[0]))
+		for i, cell := range resp.Values[0] {
+			if cell != nil {
+				sheetColumns[i] = strings.TrimSpace(fmt.Sprintf("%v", cell))
+			}
+		}
+
+		if len(columnNames) != len(sheetColumns) {
+			return fmt.Errorf("column count mismatch: expected %d columns, sheet has %d",
+				len(columnNames), len(sheetColumns))
+		}
+
+		for i, expectedCol := range columnNames {
+			if i < len(sheetColumns) && strings.TrimSpace(expectedCol) != sheetColumns[i] {
+				return fmt.Errorf("column name mismatch at position %d: expected '%s', sheet has '%s'",
+					i, expectedCol, sheetColumns[i])
+			}
+		}
+	}
+
+	// Get directory-specific database connection
+	db, err := app.DirectoryDBManager.GetDirectoryDB(directoryID)
+	if err != nil {
+		return fmt.Errorf("failed to get directory database: %v", err)
+	}
+
+	if _, err := db.Exec("DELETE FROM _meta_directory_column_types"); err != nil {
+		return fmt.Errorf("failed to clear column types table: %v", err)
+	}
+
+	for i := range columnNames {
+		if _, err := db.Exec(
+			`INSERT INTO _meta_directory_column_types (
+                                          columnName,
+                                          columnTable,
+                                          columnType
+                    ) VALUES (?, ?, ?)`,
+			columnNames[i], directoryID, columnTypes[i]); err != nil {
+			return fmt.Errorf("failed to insert column type %v for column %v: %v",
+				columnTypes[i], columnNames[i], err)
+		}
+
+		if columnTypes[i] == "tag" || columnTypes[i] == "location" {
+			tableName := fmt.Sprintf("_meta_%v_tag_%v", directoryID, columnNames[i])
+
+			if _, err := db.Exec(
+				`CREATE TABLE ? (
+                       columnTable TEXT NOT NULL,
+                       rowID integer NOT NULL,
+                       tag TEXT NOT NULL)
+                       FOREIGN KEY (rowID) REFERENCES ?(rowID);`,
+				tableName, directoryID); err != nil {
+				return fmt.Errorf("failed to create tag table %v for %v: %v", tableName, directoryID, err)
+			}
+
+		}
+
+	}
+
+	// Drop the old directory table if it exists
+	if _, err := db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s", directoryID)); err != nil {
+		return fmt.Errorf("failed to drop old directory table: %v", err)
+	}
+
+	// Create column definitions for the new table
+	columnDefs := []string{"rowID INTEGER PRIMARY KEY AUTOINCREMENT"}
+	for i := range columnNames {
+		// Use TEXT type for all columns since tags and locations will be handled in separate tables
+		// Quote column names to handle spaces and special characters
+		columnDefs = append(columnDefs, fmt.Sprintf("[%s] TEXT", columnNames[i]))
+	}
+
+	// Create the new directory table
+	query := fmt.Sprintf("CREATE TABLE %s (%s)", directoryID, strings.Join(columnDefs, ", "))
+	if _, err := db.Exec(query); err != nil {
+		return fmt.Errorf("failed to create directory table: %v", err)
+	}
+
+	// Insert data from the sheet
+	if len(resp.Values) > 1 {
+		// Prepare column list for INSERT statement - quote column names
+		quotedColumns := make([]string, len(columnNames))
+		for i, name := range columnNames {
+			quotedColumns[i] = fmt.Sprintf("[%s]", name)
+		}
+		columnList := strings.Join(quotedColumns, ", ")
+		placeholders := make([]string, len(columnNames))
+		for i := range placeholders {
+			placeholders[i] = "?"
+		}
+		insertQuery := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+			directoryID, columnList, strings.Join(placeholders, ", "))
+
+		for i := 1; i < len(resp.Values); i++ { // Skip header row
+			row := resp.Values[i]
+			rowData := make([]interface{}, len(columnNames))
+
+			for j := range columnNames {
+				var cellValue string
+				if j < len(row) && row[j] != nil {
+					cellValue = fmt.Sprintf("%v", row[j])
+				}
+				rowData[j] = cellValue
+			}
+
+			// Insert the main row
+			result, err := db.Exec(insertQuery, rowData...)
+			if err != nil {
+				return fmt.Errorf("failed to insert row %d: %v", insertQuery, err)
+			}
+
+			// Get the inserted row ID
+			rowID, err := result.LastInsertId()
+			if err != nil {
+				return fmt.Errorf("failed to get last insert ID for row %d: %v", i, err)
+			}
+
+			// Handle tag and location columns
+			for j, columnType := range columnTypes {
+				if columnType == "tag" || columnType == "location" {
+					if j < len(row) && row[j] != nil {
+						cellValue := fmt.Sprintf("%v", row[j])
+						if cellValue != "" {
+							// Split comma-separated values
+							tags := strings.Split(cellValue, ",")
+							tableName := fmt.Sprintf("_meta_%s_tag_%s", directoryID, columnNames[j])
+
+							for _, tag := range tags {
+								tag = strings.TrimSpace(tag)
+								if tag != "" {
+									_, err := db.Exec(
+										fmt.Sprintf("INSERT INTO %s (columnTable, rowID, tag) VALUES (?, ?, ?)", tableName),
+										directoryID, rowID, tag)
+									if err != nil {
+										return fmt.Errorf("failed to insert tag %s for column %s: %v",
+											tag, columnNames[j], err)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+
+}
+func (app *App) reimportSheet(
+	ctx context.Context, spreadsheetID string,
+	token *oauth2.Token, directoryID string,
+) error {
+	// Get column names and types from database for re-import
+	db, err := app.DirectoryDBManager.GetDirectoryDB(directoryID)
+	if err != nil {
+		return fmt.Errorf("Failed to get directory database for re-import: %v\n", err)
+	}
+
+	// Query column types from meta table
+	rows, err := db.Query(`
+		SELECT columnName, columnType 
+		FROM _meta_directory_column_types 
+		WHERE columnTable = ? 
+		ORDER BY rowid`, directoryID)
+	if err != nil {
+		return fmt.Errorf("Failed to query column types for re-import: %v\n", err)
+	}
+	defer rows.Close()
+
+	var columnNames []string
+	var columnTypes []string
+
+	for rows.Next() {
+		var columnName, columnType string
+		if err := rows.Scan(&columnName, &columnType); err != nil {
+			return fmt.Errorf("Failed to scan column data for re-import: %v\n", err)
+		}
+		columnNames = append(columnNames, columnName)
+		columnTypes = append(columnTypes, columnType)
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("Error iterating column rows for re-import: %v\n", err)
+	}
+
+	if len(columnNames) == 0 {
+		return fmt.Errorf("No column configuration found for directory %s, skipping re-import\n", directoryID)
+
+	}
+
+	return app.importDirectoryFromSheet(ctx, spreadsheetID, token, directoryID, columnNames, columnTypes)
+
+}
+
 func (app *App) handleImport(w http.ResponseWriter, r *http.Request) {
 	userEmail, ok := utils2.RequireAuthentication(w, r)
 	if !ok {
@@ -65,6 +283,51 @@ func (app *App) handleImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse column names and types from form data
+	var columnNames []string
+	var columnTypes []string
+
+	// Parse column names (assuming they come as column_name_0, column_name_1, etc.)
+	for i := 0; ; i++ {
+		columnName := r.FormValue(fmt.Sprintf("column_name_%d", i))
+		if columnName == "" {
+			break
+		}
+		columnNames = append(columnNames, SanitizeInput(columnName))
+	}
+
+	// Parse column types (assuming they come as column_type_0, column_type_1, etc.)
+	for i := 0; ; i++ {
+		columnType := r.FormValue(fmt.Sprintf("column_type_%d", i))
+		if columnType == "" {
+			break
+		}
+		// Validate column type
+		validTypes := map[string]bool{
+			"basic": true, "numeric": true, "location": true,
+			"tag": true, "category": true,
+		}
+		if !validTypes[columnType] {
+			log.Printf("Invalid column type provided: %s", columnType)
+			utils2.ValidationError(w, fmt.Sprintf("Invalid column type: %s", columnType))
+			return
+		}
+		columnTypes = append(columnTypes, columnType)
+	}
+
+	// Validate that we have the same number of column names and types
+	if len(columnNames) != len(columnTypes) {
+		log.Printf("Column names count (%d) doesn't match column types count (%d)",
+			len(columnNames), len(columnTypes))
+		utils2.ValidationError(w, "Column names and types count mismatch")
+		return
+	}
+
+	if len(columnNames) == 0 {
+		utils2.ValidationError(w, "No columns specified")
+		return
+	}
+
 	token, err := app.getDecryptedToken(userEmail)
 	if err != nil {
 		log.Printf("Failed to get token for user %s: %v", userEmail, err)
@@ -82,8 +345,7 @@ func (app *App) handleImport(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-
-	if err := app.importFromSheet(ctx, spreadsheetID, refreshedToken, directoryID); err != nil {
+	if err := app.importDirectoryFromSheet(ctx, spreadsheetID, refreshedToken, directoryID, columnNames, columnTypes); err != nil {
 		log.Printf("Failed to import sheet %s: %v", spreadsheetID, err)
 		utils2.InternalServerError(w, fmt.Sprintf("Failed to import sheet: %v", err))
 		return
@@ -102,95 +364,6 @@ func (app *App) handleImport(w http.ResponseWriter, r *http.Request) {
 		redirectURL += "&dir=" + directoryID
 	}
 	http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
-}
-
-func (app *App) importFromSheet(ctx context.Context, spreadsheetID string, token *oauth2.Token, directoryID string) error {
-	client := app.OAuthConfig.Client(ctx, token)
-
-	srv, err := sheets.NewService(ctx, option.WithHTTPClient(client))
-	if err != nil {
-		return fmt.Errorf("unable to retrieve Sheets client: %v", err)
-	}
-
-	resp, err := srv.Spreadsheets.Values.Get(spreadsheetID, app.Config.SheetRange).Do()
-	if err != nil {
-		return fmt.Errorf("unable to retrieve data from sheet: %v", err)
-	}
-
-	if len(resp.Values) == 0 {
-		return fmt.Errorf("no data found in sheet")
-	}
-
-	// Get directory-specific database connection
-	db, err := app.DirectoryDBManager.GetDirectoryDB(directoryID)
-	if err != nil {
-		return fmt.Errorf("failed to get directory database: %v", err)
-	}
-
-	// Extract and store column names from the first row
-	var columns []string
-	if len(resp.Values) > 0 {
-		for i, cell := range resp.Values[0] {
-			if cell != nil {
-				columnName := fmt.Sprintf("%v", cell)
-				if columnName == "" {
-					columnName = fmt.Sprintf("Column %d", i+1)
-				}
-				columns = append(columns, SanitizeInput(columnName))
-			} else {
-				columns = append(columns, fmt.Sprintf("Column %d", i+1))
-			}
-		}
-	}
-
-	// Store column names
-	columnsJSON, err := json.Marshal(columns)
-	if err != nil {
-		return fmt.Errorf("failed to marshal column names: %v", err)
-	}
-
-	if _, err := db.Exec("DELETE FROM directory"); err != nil {
-		return fmt.Errorf("failed to clear directory table: %v", err)
-	}
-
-	if _, err := db.Exec("DELETE FROM directory_columns"); err != nil {
-		return fmt.Errorf("failed to clear directory columns table: %v", err)
-	}
-
-	if _, err := db.Exec("INSERT INTO directory_columns (id, columns) VALUES (1, ?)", string(columnsJSON)); err != nil {
-		return fmt.Errorf("failed to store column names: %v", err)
-	}
-
-	for i, row := range resp.Values {
-		if i == 0 {
-			continue
-		}
-
-		rowData := make([]string, len(row))
-		for j, cell := range row {
-			if cell != nil {
-				cellStr := fmt.Sprintf("%v", cell)
-				rowData[j] = SanitizeInput(cellStr)
-			}
-		}
-
-		if err := ValidateRowData(rowData); err != nil {
-			log.Printf("Skipping invalid row %d: %v", i, err)
-			continue
-		}
-
-		jsonData, err := json.Marshal(rowData)
-		if err != nil {
-			return fmt.Errorf("failed to marshal row data: %v", err)
-		}
-
-		_, err = db.Exec("INSERT INTO directory (data) VALUES (?)", string(jsonData))
-		if err != nil {
-			return fmt.Errorf("failed to insert row %d: %v", i, err)
-		}
-	}
-
-	return nil
 }
 
 func (app *App) updateSheetCell(spreadsheetID string, row, col int, value string, token *oauth2.Token) error {
@@ -486,9 +659,16 @@ func (app *App) previewSheet(ctx context.Context, spreadsheetID string, token *o
 		rowCount = 0
 	}
 
+	// Default all columns to "basic" type
+	columnTypes := make([]string, len(columns))
+	for i := range columnTypes {
+		columnTypes[i] = "basic"
+	}
+
 	return &PreviewResponse{
-		Columns:   columns,
-		RowCount:  rowCount,
-		SheetName: sheetName,
+		Columns:     columns,
+		ColumnTypes: columnTypes,
+		RowCount:    rowCount,
+		SheetName:   sheetName,
 	}, nil
 }

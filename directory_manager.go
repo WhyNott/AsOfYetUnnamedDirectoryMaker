@@ -168,70 +168,24 @@ func (app *App) initDirectoryDatabase(dbPath string) error {
 	defer db.Close()
 
 	query := `
-		CREATE TABLE IF NOT EXISTS directory (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			data TEXT NOT NULL
-		);
-		
-		CREATE TABLE IF NOT EXISTS directory_columns (
-			id INTEGER PRIMARY KEY,
-			columns TEXT NOT NULL
-		);
+		CREATE Table IF NOT EXISTS _meta_directory_column_types (
+  	columnName TEXT NOT NULL,
+  	columnTable TEXT NOT NULL,
+  	columnType TEXT CHECK (
+  		columnType IN (
+  			'basic',
+  			'numeric',
+  			'location',
+  			'tag',
+  			'category'
+  		)
+  	) NOT NULL,
+  	PRIMARY KEY (columnName, columnTable)
+  );
 	`
 	_, err = db.Exec(query)
 	if err != nil {
 		return fmt.Errorf("failed to initialize directory database tables: %v", err)
-	}
-
-	return nil
-}
-
-// MigrateToMultiDirectory creates a default directory and migrates existing data
-func (app *App) MigrateToMultiDirectory() error {
-	// Check if default directory already exists
-	_, err := app.GetDirectory("default")
-	if err == nil {
-		// Already migrated
-		return nil
-	}
-
-	log.Printf("Migrating to multi-directory system...")
-
-	// Create default directory
-	if err := app.CreateDirectory("default", "Default Directory", "Legacy directory for existing data", "system@localhost"); err != nil {
-		return fmt.Errorf("failed to create default directory: %v", err)
-	}
-
-	// Copy existing directory.db to default.db
-	defaultDBPath := "./data/default.db"
-	existingDBPath := "./directory.db"
-
-	if _, err := os.Stat(existingDBPath); err == nil {
-		// Copy existing data
-		if err := app.copyDatabase(existingDBPath, defaultDBPath); err != nil {
-			log.Printf("Warning: failed to copy existing database: %v", err)
-		} else {
-			log.Printf("Successfully migrated existing data to default directory")
-		}
-	}
-
-	// Make all existing admin users owners of the default directory
-	rows, err := app.DB.Query("SELECT DISTINCT user_email FROM admin_sessions")
-	if err != nil {
-		log.Printf("Warning: failed to query existing admin users: %v", err)
-	} else {
-		defer rows.Close()
-		for rows.Next() {
-			var userEmail string
-			if err := rows.Scan(&userEmail); err == nil {
-				// Add as owner of default directory
-				app.DB.Exec(`
-					INSERT OR IGNORE INTO directory_owners (directory_id, user_email, role, created_at)
-					VALUES ('default', ?, 'owner', ?)
-				`, userEmail, time.Now())
-				log.Printf("Added %s as owner of default directory", userEmail)
-			}
-		}
 	}
 
 	return nil

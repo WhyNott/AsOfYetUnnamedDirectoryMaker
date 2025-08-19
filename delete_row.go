@@ -106,7 +106,7 @@ func (app *App) deleteRowFromSheet(ctx context.Context, rowIndex int, reason str
 	fmt.Printf("Successfully deleted row %d from sheet. Reason: %s\n", rowIndex, reason)
 
 	// Re-import the sheet to refresh our database
-	if err := app.importFromSheet(ctx, spreadsheetID, &token, directoryID); err != nil {
+	if err := app.reimportSheet(ctx, spreadsheetID, &token, directoryID); err != nil {
 		fmt.Printf("Failed to re-import sheet after deletion: %v\n", err)
 	} else {
 		fmt.Println("Successfully re-imported sheet data after deletion")
