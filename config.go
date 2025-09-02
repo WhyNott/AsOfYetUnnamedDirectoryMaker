@@ -63,7 +63,7 @@ func LoadConfig() (*Config, error) {
 	config.RedirectURL = getEnvWithDefault("REDIRECT_URL", "http://localhost:8080/auth/callback")
 	config.TwitterRedirectURL = getEnvWithDefault("TWITTER_REDIRECT_URL", "http://localhost:8080/auth/twitter/callback")
 	config.DatabasePath = getEnvWithDefault("DATABASE_PATH", "./private.db")
-	config.Port = getEnvWithDefault("PORT", "8080")
+	config.Port = getEnvWithDefault("PORT", "9090")
 	config.SheetRange = getEnvWithDefault("SHEET_RANGE", "A:Z")
 	config.LogLevel = getEnvWithDefault("LOG_LEVEL", "INFO")
 	config.Environment = getEnvWithDefault("ENVIRONMENT", "development")
