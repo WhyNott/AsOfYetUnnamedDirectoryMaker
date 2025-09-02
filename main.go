@@ -122,9 +122,9 @@ func main() {
 	app.PermissionCache = utils2.NewPermissionCache()
 
 	//create default DB
-	if err := app.CreateDirectory("default", "default", "", ""); err != nil {
-		log.Fatal("Failed to create defualt DB:", err)
-	}
+	//if err := app.CreateDirectory("default", "default", "", ""); err != nil {
+	//	log.Fatal("Failed to create defualt DB:", err)
+	//}
 
 	r := mux.NewRouter()
 
