@@ -1,2 +1,2 @@
 #/bin/bash
-fuser -k 8080/tcp & go run *.go &> log.txt &
+fuser -k 9090/tcp & go run *.go &> log.txt &
