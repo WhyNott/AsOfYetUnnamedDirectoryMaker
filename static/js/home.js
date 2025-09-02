@@ -214,11 +214,11 @@ function renderFilteredTable(dataToRender) {
         headerRowElement.appendChild(th);
     }
     
-    // Add delete column header
+   /* // Add delete column header
     const deleteHeader = document.createElement('th');
     deleteHeader.textContent = 'Actions';
     deleteHeader.className = 'delete-cell';
-    headerRowElement.appendChild(deleteHeader);
+    headerRowElement.appendChild(deleteHeader);*/
     
     headerRow.appendChild(headerRowElement);
     
@@ -244,7 +244,7 @@ function renderFilteredTable(dataToRender) {
             tr.appendChild(td);
         }
         
-        // Add delete button cell
+      /*  // Add delete button cell
         const deleteCell = document.createElement('td');
         deleteCell.className = 'delete-cell';
         
@@ -258,7 +258,7 @@ function renderFilteredTable(dataToRender) {
         });
         
         deleteCell.appendChild(deleteBtn);
-        tr.appendChild(deleteCell);
+        tr.appendChild(deleteCell);*/
         
         tbody.appendChild(tr);
     });

@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html>
+<html xmlns="http://www.w3.org/1999/html">
 <head>
-    <title>Directory Service</title>
+    <title>HiveSheet</title>
     <meta name="csrf-token" content="{{.CSRFToken}}">
     <link rel="stylesheet" href="/static/css/home.css">
     <!-- <link rel="stylesheet" href="https://matcha.mizu.sh/matcha.css"> -->
     <link rel="stylesheet" href="https://latex.vercel.app/style.css">
-    
+    <link rel="icon" type="image/x-icon" href="/static/images/favicon.png">
     <!-- Dependencies for filtering controls -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/selectize.js/0.15.2/css/selectize.default.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css"> 
@@ -15,55 +15,37 @@
     <div class="container">
         <div class="header">
             <div>
-                <h1>{{.Directory.Name}}</h1>
+                <img src="/static/images/logo.png" alt="HiveSheet">
+                <br>
+                <h1>What is HiveSheet?</h1>
+                <p><span style="font-weight: 400;">HiveSheet is a collaborative directory creation tool which allows for </span><strong>distributed gathering </strong><span style="font-weight: 400;">and </span><strong>verification</strong><span style="font-weight: 400;"> of data. HiveSheet allows for easy creation of directory websites based on a Google Sheet, while </span><strong>allowing users to submit corrections</strong><span style="font-weight: 400;">, which are then automatically propagated back to the original sheet. These corrections can take the form of altering data or adding or removing entries. The validity of these changes is guarded by a robust </span><strong>hierarchical moderation system </strong><span style="font-weight: 400;">where certain portions of the directory (specified by arbitrary filtering criteria) can be assigned to require an additional moderator queue. The moderators can in turn </span><strong>delegate</strong><span style="font-weight: 400;"> a portion of their portion to subordinate moderators, allowing for a flexible moderation system that can suit an organization structure or a distributed community. </span></p>
+
+                <br>
+                <h1>What's our roadmap?</h1>
+                <p>HiveSheet is currently operating as a very basic prototype. In the upcoming weeks and months, we are planning to:</p>
+                <ul>
+                    <li style="font-weight: 400;"><span style="font-weight: 400;">Creating several directories based on this tool in order to showcase its potential<br /></span></li>
+                    <li style="font-weight: 400;"><span style="font-weight: 400;">Complete moderation/approval workflow working (including delegation)</span></li>
+                    <li style="font-weight: 400;"><strong>Public launch</strong> (allowing users to register and create their own directories).</li>
+                    <li style="font-weight: 400;"><span style="font-weight: 400;">Improving the design/presentation of the directory website to keep it up-to-pair with other directory websites</span></li>
+                    <li style="font-weight: 400;"><span style="font-weight: 400;">More advanced location-aware geographical filtering, including </span><span style="font-weight: 400;">geographically-scoped moderation</span></li>
+                    <li style="font-weight: 400;"><span style="font-weight: 400;">Back-end architectural/security improvements</span></li>
+                    <li style="font-weight: 400;"><span style="font-weight: 400;">Front-end performance improvements</span></li>
+                </ul>
+                <p><span style="font-weight: 400;">And more. </span></p>
+                <p><span style="font-weight: 400;">See the project <a href="https://github.com/WhyNott/HiveSheet">on GitHub</a>.</span></p>
+                <br>
+                <h1>Try it out</h1>
+                <p><span style="font-weight: 400;">Add your name to the list using the button below, and see the Google Sheet update <a href="https://docs.google.com/spreadsheets/d/1PBH7NTBrUxJicFUnLc0ZaAWUETowX-M4vGKMD3fB8ew/edit?gid=0#gid=0">in real time</a>.<br /></span></p>
+                <button id="addRowBtn" class="add-row-btn" style="text-align: center;display: flex;padding: 1em;margin: auto;">Register interest</button>
                 <div>
-                    Directory: <strong>{{.Directory.ID}}</strong>
-                    {{if .Directory.Description}} • {{.Directory.Description}}{{end}}
+                    Currently interested parties:
                 </div>
             </div>
-            <div class="nav-controller">
-                {{if .IsAuthenticated}}
-                    <span>Logged in as: <strong>{{.UserEmail}}</strong>
-                        {{if .IsAdmin}}<span>ADMIN</span>{{end}}
-                        {{if .IsDirectoryOwner}}<span>OWNER</span>{{end}}
-                        {{if .IsModerator}}<span>MODERATOR</span>{{end}}
-                    </span>
-                    <a href="/logout" class="admin-btn">Logout</a>
-                {{else}}
-                    <a href="/login" class="admin-btn">Login</a>
-                {{end}}
-                <a href="{{.DownloadURL}}" class="download-btn">Download Database</a>
-                {{if .IsAuthenticated}}
-                    {{if or .IsDirectoryOwner .IsAdmin}}
-                        <a href="{{.AdminURL}}" class="admin-btn">Owner Panel</a>
-                    {{end}}
-                    {{if .IsModerator}}
-                        <a href="/moderator" class="admin-btn">Moderator Dashboard</a>
-                    {{end}}
-                    {{if .IsAdmin}}
-                        <a href="/admin" class="admin-btn">Admin</a>
-                    {{end}}
-                {{end}}
-            </div>
         </div>
         
-        <div class="controls">
-            {{if .IsAuthenticated}}
-                <select id="directorySelector" class="search-box">
-                    <option value="">Loading directories...</option>
-                </select>
-            {{end}}
-            <input type="text" id="searchBox" class="search-box" placeholder="Search directory...">
-            <button id="addRowBtn" class="add-row-btn">Add New Row</button>
-            <span id="recordCount"></span>
-        </div>
-        
-        <!-- Filtering Controls Section -->
-        <section>
-            <h3>🔍 Filter Directory</h3>
-            <div id="filterControls"></div>
-            <div id="basicFilterFields"></div>
-        </section>
+
+
         
         <div id="loading">Loading directory...</div>
         <table id="directoryTable">
@@ -101,21 +83,6 @@
         </div>
     </div>
 
-    <!-- Delete Row Modal -->
-    <div id="deleteRowModal" class="modal">
-        <div class="modal-content">
-            <span class="close" id="closeDeleteRow">&times;</span>
-            <h2>Delete Row</h2>
-            <p><strong>Warning:</strong> This will permanently delete the selected row.</p>
-            <p>Row data: <span id="deleteRowData"></span></p>
-            <label for="deleteReason">Reason for deletion (optional):</label>
-            <input type="text" id="deleteReason" placeholder="Enter reason for deleting this row..." maxlength="500" />
-            <div>
-                <button id="confirmDelete">Delete Row</button>
-                <button id="cancelDelete">Cancel</button>
-            </div>
-        </div>
-    </div>
 
     <!-- Dependencies -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>

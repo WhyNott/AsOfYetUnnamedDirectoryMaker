@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Directory Service</title>
+    <meta name="csrf-token" content="{{.CSRFToken}}">
+    <link rel="stylesheet" href="/static/css/home.css">
+    <!-- <link rel="stylesheet" href="https://matcha.mizu.sh/matcha.css"> -->
+    <link rel="stylesheet" href="https://latex.vercel.app/style.css">
+    
+    <!-- Dependencies for filtering controls -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/selectize.js/0.15.2/css/selectize.default.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css"> 
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>{{.Directory.Name}}</h1>
+                <div>
+                    Directory: <strong>{{.Directory.ID}}</strong>
+                    {{if .Directory.Description}} • {{.Directory.Description}}{{end}}
+                </div>
+            </div>
+            <div class="nav-controller">
+                {{if .IsAuthenticated}}
+                    <span>Logged in as: <strong>{{.UserEmail}}</strong>
+                        {{if .IsAdmin}}<span>ADMIN</span>{{end}}
+                        {{if .IsDirectoryOwner}}<span>OWNER</span>{{end}}
+                        {{if .IsModerator}}<span>MODERATOR</span>{{end}}
+                    </span>
+                    <a href="/logout" class="admin-btn">Logout</a>
+                {{else}}
+                    <a href="/login" class="admin-btn">Login</a>
+                {{end}}
+                <a href="{{.DownloadURL}}" class="download-btn">Download Database</a>
+                {{if .IsAuthenticated}}
+                    {{if or .IsDirectoryOwner .IsAdmin}}
+                        <a href="{{.AdminURL}}" class="admin-btn">Owner Panel</a>
+                    {{end}}
+                    {{if .IsModerator}}
+                        <a href="/moderator" class="admin-btn">Moderator Dashboard</a>
+                    {{end}}
+                    {{if .IsAdmin}}
+                        <a href="/admin" class="admin-btn">Admin</a>
+                    {{end}}
+                {{end}}
+            </div>
+        </div>
+        
+        <div class="controls">
+            {{if .IsAuthenticated}}
+                <select id="directorySelector" class="search-box">
+                    <option value="">Loading directories...</option>
+                </select>
+            {{end}}
+            <input type="text" id="searchBox" class="search-box" placeholder="Search directory...">
+            <button id="addRowBtn" class="add-row-btn">Add New Row</button>
+            <span id="recordCount"></span>
+        </div>
+        
+        <!-- Filtering Controls Section -->
+        <section>
+            <h3>🔍 Filter Directory</h3>
+            <div id="filterControls"></div>
+            <div id="basicFilterFields"></div>
+        </section>
+        
+        <div id="loading">Loading directory...</div>
+        <table id="directoryTable">
+            <thead id="tableHeader"></thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+
+    <!-- Correction Modal -->
+    <div id="correctionModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Suggest Correction</h2>
+            <p>Current value: <strong id="currentValue"></strong></p>
+            <label for="newValue">New value:</label>
+            <input type="text" id="newValue" />
+            <div style="margin-top: 20px;">
+                <button id="submitCorrection">Submit Correction</button>
+                <button id="cancelCorrection" class="cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Row Modal -->
+    <div id="addRowModal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="closeAddRow">&times;</span>
+            <h2>Add New Row</h2>
+            <p>Fill in the values for each column:</p>
+            <div id="addRowInputs"></div>
+            <div>
+                <button id="submitNewRow">Add Row</button>
+                <button id="cancelNewRow">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Row Modal -->
+    <div id="deleteRowModal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="closeDeleteRow">&times;</span>
+            <h2>Delete Row</h2>
+            <p><strong>Warning:</strong> This will permanently delete the selected row.</p>
+            <p>Row data: <span id="deleteRowData"></span></p>
+            <label for="deleteReason">Reason for deletion (optional):</label>
+            <input type="text" id="deleteReason" placeholder="Enter reason for deleting this row..." maxlength="500" />
+            <div>
+                <button id="confirmDelete">Delete Row</button>
+                <button id="cancelDelete">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dependencies -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/selectize.js/0.15.2/js/selectize.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+    
+    <!-- Application Scripts -->
+    <script src="/static/js/forms_control_generator.js"></script>
+    <script src="/static/js/home.js"></script>
+    <script>
+        // Pass template variables to global scope
+        window.homeConfig = {
+            csrfToken: '{{.CSRFToken}}',
+            isAuthenticated: {{.IsAuthenticated}},
+            directoryId: '{{.Directory.ID}}'
+        };
+    </script>
+</body>
+</html>
