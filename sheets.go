@@ -99,7 +99,7 @@ func (app *App) importDirectoryFromSheet(
 	}
 
 	// Drop the old directory table if it exists
-	if _, err := db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s", directoryID)); err != nil {
+	if _, err := db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS '%s'", directoryID)); err != nil {
 		return fmt.Errorf("failed to drop old directory table: %v", err)
 	}
 

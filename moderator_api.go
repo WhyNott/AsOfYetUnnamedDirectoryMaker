@@ -257,3 +257,49 @@ func (app *App) handleGetModeratorHierarchy(w http.ResponseWriter, r *http.Reque
 
 	utils2.RespondWithJSON(w, 200, hierarchy)
 }
+
+// handleDismissInvalidChange handles dismissing invalid changes
+func (app *App) handleDismissInvalidChange(w http.ResponseWriter, r *http.Request) {
+	userEmail, ok := utils2.RequireAuthentication(w, r)
+	if !ok {
+		return
+	}
+
+	directoryID := utils2.GetDirectoryID(r)
+
+	var req struct {
+		ChangeID int `json:"change_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils2.BadRequestError(w, "Invalid request body")
+		return
+	}
+
+	// Check if user can dismiss changes (same permissions as approving)
+	canApprove, err := app.CanApproveChange(userEmail, directoryID, req.ChangeID)
+	if err != nil {
+		log.Printf("Failed to check dismiss permission: %v", err)
+		utils2.InternalServerError(w, "Internal server error")
+		return
+	}
+
+	if !canApprove {
+		utils2.AuthorizationError(w)
+		return
+	}
+
+	// Mark change as dismissed (delete it)
+	_, err = app.DB.Exec(`
+		DELETE FROM pending_changes 
+		WHERE id = ? AND status = ? AND directory_id = ?
+	`, req.ChangeID, ChangeStatusInvalid, directoryID)
+
+	if err != nil {
+		log.Printf("Failed to dismiss invalid change: %v", err)
+		utils2.InternalServerError(w, "Failed to dismiss change")
+		return
+	}
+
+	utils2.RespondWithSuccess(w, nil, "Invalid change dismissed successfully")
+}

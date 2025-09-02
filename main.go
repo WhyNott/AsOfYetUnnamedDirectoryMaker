@@ -121,6 +121,11 @@ func main() {
 	app.DirectoryDBManager = NewDirectoryDatabaseManager(app)
 	app.PermissionCache = utils2.NewPermissionCache()
 
+	//create default DB
+	if err := app.CreateDirectory("default", "default", "", ""); err != nil {
+		log.Fatal("Failed to create defualt DB:", err)
+	}
+
 	r := mux.NewRouter()
 
 	r.Use(app.RecoveryMiddleware)
@@ -165,6 +170,7 @@ func main() {
 	// Change approval routes
 	r.HandleFunc("/api/changes/pending", app.AuthMiddleware(app.ModeratorMiddleware(app.handleGetPendingChanges))).Methods("GET")
 	r.HandleFunc("/api/changes/approve", app.AuthMiddleware(app.ModeratorMiddleware(app.CSRFMiddleware(app.handleApproveChange)))).Methods("POST")
+	r.HandleFunc("/api/changes/dismiss", app.AuthMiddleware(app.ModeratorMiddleware(app.CSRFMiddleware(app.handleDismissInvalidChange)))).Methods("DELETE")
 
 	// Moderator dashboard
 	r.HandleFunc("/moderator", app.AuthMiddleware(app.ModeratorMiddleware(app.handleModeratorDashboard))).Methods("GET")
@@ -246,7 +252,7 @@ func (app *App) initDatabase() error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			moderator_email TEXT NOT NULL,
 			directory_id TEXT NOT NULL,
-			row_filter TEXT, -- JSON array of row IDs or filter conditions
+			row_filter TEXT, -- JSON Controls from filters.go model
 			can_edit BOOLEAN DEFAULT TRUE,
 			can_approve BOOLEAN DEFAULT FALSE,
 			requires_approval BOOLEAN DEFAULT TRUE,
@@ -265,10 +271,12 @@ func (app *App) initDatabase() error {
 			new_value TEXT NOT NULL,
 			change_type TEXT NOT NULL, -- 'edit', 'add', 'delete'
 			submitted_by TEXT NOT NULL, -- moderator email
-			status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+			status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected', 'invalid'
 			reviewed_by TEXT, -- approver email
 			reviewed_at DATETIME,
 			reason TEXT, -- reason for rejection or notes
+			column_schema TEXT, -- JSON array of column names when change was submitted
+			invalid_reason TEXT, -- reason why change became invalid
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (directory_id) REFERENCES directories(id)
 		);
@@ -294,6 +302,18 @@ func (app *App) initDatabase() error {
 		log.Printf("Note: Could not add directory_id column to admin_sessions: %v", err)
 		// This is not a fatal error, column might already exist
 	}
+
+	// Add new columns to pending_changes if they don't exist (migration)
+	_, err = app.DB.Exec(`ALTER TABLE pending_changes ADD COLUMN column_schema TEXT`)
+	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		log.Printf("Note: Could not add column_schema column to pending_changes: %v", err)
+	}
+
+	_, err = app.DB.Exec(`ALTER TABLE pending_changes ADD COLUMN invalid_reason TEXT`)
+	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		log.Printf("Note: Could not add invalid_reason column to pending_changes: %v", err)
+	}
+
 	return nil
 }
 

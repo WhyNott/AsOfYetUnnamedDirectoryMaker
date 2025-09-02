@@ -13,6 +13,11 @@ import (
 )
 
 func (app *App) handleDeleteRow(w http.ResponseWriter, r *http.Request) {
+	userEmail, ok := utils2.RequireAuthentication(w, r)
+	if !ok {
+		return
+	}
+
 	var deleteRowReq DeleteRowRequest
 	if err := json.NewDecoder(r.Body).Decode(&deleteRowReq); err != nil {
 		log.Printf("Failed to decode delete row request: %v", err)
@@ -38,6 +43,66 @@ func (app *App) handleDeleteRow(w http.ResponseWriter, r *http.Request) {
 	// Get directory ID from query parameter or default to "default"
 	directoryID := utils2.GetDirectoryID(r)
 
+	// Check user permissions and apply moderation workflow
+	userType, err := app.GetUserType(userEmail, directoryID)
+	if err != nil {
+		log.Printf("Failed to get user type: %v", err)
+		utils2.InternalServerError(w, "Permission check failed")
+		return
+	}
+
+	// Get actual row ID from the row index
+	actualRowID, err := app.getRowIDFromIndex(directoryID, deleteRowReq.Row)
+	if err != nil {
+		log.Printf("Failed to get row ID from index %d: %v", deleteRowReq.Row, err)
+		utils2.NotFoundError(w, "Row")
+		return
+	}
+
+	if userType == UserTypeModerator {
+		// Check if moderator can access this row
+		filter := NewModerationFilter(app)
+		canAccess, err := filter.CanAccessRow(userEmail, directoryID, actualRowID)
+		if err != nil {
+			log.Printf("Failed to check row access: %v", err)
+			utils2.InternalServerError(w, "Permission check failed")
+			return
+		}
+		if !canAccess {
+			utils2.AuthorizationError(w)
+			return
+		}
+
+		// Check if moderator's changes require approval
+		permissions, err := app.GetModeratorPermissions(userEmail, directoryID)
+		if err != nil {
+			log.Printf("Failed to get moderator permissions: %v", err)
+			utils2.InternalServerError(w, "Permission check failed")
+			return
+		}
+
+		if !permissions.CanEdit {
+			utils2.AuthorizationError(w)
+			return
+		}
+
+		if permissions.RequiresApproval {
+			// Create pending change for row deletion
+			err = app.createPendingDeleteRow(directoryID, actualRowID, deleteRowReq.Reason, userEmail)
+			if err != nil {
+				log.Printf("Failed to create pending delete row: %v", err)
+				utils2.InternalServerError(w, "Failed to submit change for approval")
+				return
+			}
+			utils2.RespondWithSuccess(w, nil, "Row deletion submitted for approval")
+			return
+		}
+	} else if userType != UserTypeOwner && userType != UserTypeAdmin {
+		utils2.AuthorizationError(w)
+		return
+	}
+
+	// For owners/admins or moderators without approval requirement, delete directly
 	// Try to delete the row from the original Google Sheet
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	go func() {
@@ -111,4 +176,64 @@ func (app *App) deleteRowFromSheet(ctx context.Context, rowIndex int, reason str
 	} else {
 		fmt.Println("Successfully re-imported sheet data after deletion")
 	}
+}
+
+// createPendingDeleteRow creates a pending change for row deletion
+func (app *App) createPendingDeleteRow(directoryID string, rowID int, reason, submittedBy string) error {
+	// Get current column schema
+	columnSchema, err := app.getCurrentColumnSchema(directoryID)
+	if err != nil {
+		return fmt.Errorf("failed to get column schema: %v", err)
+	}
+
+	columnSchemaJSON, err := json.Marshal(columnSchema)
+	if err != nil {
+		return fmt.Errorf("failed to marshal column schema: %v", err)
+	}
+
+	// Get the current row data to store as old_value
+	oldRowData, err := app.getFullRowData(directoryID, rowID)
+	if err != nil {
+		return fmt.Errorf("failed to get row data for deletion: %v", err)
+	}
+
+	oldRowDataJSON, err := json.Marshal(oldRowData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal old row data: %v", err)
+	}
+
+	// Insert pending change
+	_, err = app.DB.Exec(`
+		INSERT INTO pending_changes 
+		(directory_id, row_id, column_name, old_value, new_value, change_type, submitted_by, reason, column_schema, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, directoryID, rowID, "full_row", string(oldRowDataJSON), "", ChangeTypeDelete, submittedBy, reason, string(columnSchemaJSON), time.Now())
+
+	if err != nil {
+		return fmt.Errorf("failed to insert pending delete row: %v", err)
+	}
+
+	return nil
+}
+
+// getFullRowData gets the complete row data as a string array
+func (app *App) getFullRowData(directoryID string, rowID int) ([]string, error) {
+	// Get directory-specific database connection
+	db, err := app.DirectoryDBManager.GetDirectoryDB(directoryID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get directory database: %v", err)
+	}
+
+	var dataJSON string
+	err = db.QueryRow("SELECT data FROM directory WHERE id = ?", rowID).Scan(&dataJSON)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get row data: %v", err)
+	}
+
+	var rowData []string
+	if err := json.Unmarshal([]byte(dataJSON), &rowData); err != nil {
+		return nil, fmt.Errorf("failed to parse row data: %v", err)
+	}
+
+	return rowData, nil
 }

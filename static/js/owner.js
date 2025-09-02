@@ -370,6 +370,171 @@ function clearModeratorForm() {
     checkboxes.forEach(cb => cb.checked = false);
 }
 
+// Moderation Rules Functions
+document.getElementById('showModerationRules').addEventListener('click', function() {
+    document.getElementById('moderationRulesForm').style.display = 'block';
+    document.getElementById('currentRules').style.display = 'none';
+    loadColumnsForRules();
+});
+
+document.getElementById('viewCurrentRules').addEventListener('click', function() {
+    document.getElementById('moderationRulesForm').style.display = 'none';
+    document.getElementById('currentRules').style.display = 'block';
+    loadCurrentRules();
+});
+
+document.getElementById('cancelModerationRule').addEventListener('click', function() {
+    document.getElementById('moderationRulesForm').style.display = 'none';
+    clearModerationRuleForm();
+});
+
+document.getElementById('filterType').addEventListener('change', function() {
+    const filterType = this.value;
+    const textOptions = document.getElementById('textFilterOptions');
+    const numericOptions = document.getElementById('numericFilterOptions');
+    
+    if (filterType === 'numeric_range') {
+        textOptions.style.display = 'none';
+        numericOptions.style.display = 'block';
+    } else {
+        textOptions.style.display = 'block';
+        numericOptions.style.display = 'none';
+    }
+});
+
+document.getElementById('rangeType').addEventListener('change', function() {
+    const rangeType = this.value;
+    const thresholdInput = document.getElementById('thresholdInput');
+    const rangeInputs = document.getElementById('rangeInputs');
+    
+    if (rangeType === 'between') {
+        thresholdInput.style.display = 'none';
+        rangeInputs.style.display = 'block';
+    } else {
+        thresholdInput.style.display = 'block';
+        rangeInputs.style.display = 'none';
+    }
+});
+
+document.getElementById('addModerationRule').addEventListener('click', addModerationRule);
+
+async function loadColumnsForRules() {
+    try {
+        const response = await fetch('/api/columns?dir=' + directoryId, {
+            credentials: 'same-origin'
+        });
+        
+        if (response.ok) {
+            const columns = await response.json();
+            const select = document.getElementById('filterColumn');
+            select.innerHTML = '<option value="">Select a column...</option>';
+            
+            columns.forEach((column, index) => {
+                const option = document.createElement('option');
+                option.value = column;
+                option.textContent = column;
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading columns:', error);
+    }
+}
+
+async function addModerationRule() {
+    const ruleName = document.getElementById('ruleName').value.trim();
+    const filterColumn = document.getElementById('filterColumn').value;
+    const filterType = document.getElementById('filterType').value;
+    
+    if (!ruleName || !filterColumn || !filterType) {
+        alert('Please fill in all required fields');
+        return;
+    }
+    
+    // Build the filter configuration
+    let filter;
+    if (filterType === 'numeric_range') {
+        const rangeType = document.getElementById('rangeType').value;
+        if (rangeType === 'between') {
+            const min = parseFloat(document.getElementById('minValue').value);
+            const max = parseFloat(document.getElementById('maxValue').value);
+            if (isNaN(min) || isNaN(max)) {
+                alert('Please enter valid numeric values');
+                return;
+            }
+            filter = {
+                type: 'numeric_range',
+                range: { type: 'between', min: min, max: max }
+            };
+        } else {
+            const threshold = parseFloat(document.getElementById('threshold').value);
+            if (isNaN(threshold)) {
+                alert('Please enter a valid threshold value');
+                return;
+            }
+            filter = {
+                type: 'numeric_range',
+                range: { type: rangeType, threshold: threshold }
+            };
+        }
+    } else {
+        const values = document.getElementById('filterValues').value
+            .split(',')
+            .map(v => v.trim())
+            .filter(v => v);
+        if (values.length === 0) {
+            alert('Please enter at least one filter value');
+            return;
+        }
+        filter = {
+            type: filterType,
+            values: values
+        };
+    }
+    
+    // Build the control
+    const control = {
+        column: { type: 'single', value: filterColumn },
+        filter: filter
+    };
+    
+    // For now, just alert with the configuration (in a real implementation, this would save to backend)
+    alert('Moderation rule configuration:\n' + JSON.stringify(control, null, 2) + 
+          '\n\nNote: Full implementation would save this configuration for use when appointing moderators.');
+    
+    clearModerationRuleForm();
+    document.getElementById('moderationRulesForm').style.display = 'none';
+}
+
+function loadCurrentRules() {
+    // Placeholder - in full implementation this would load from backend
+    document.getElementById('rulesContent').innerHTML = 
+        '<p style="color: #666; font-style: italic;">No moderation rules configured yet.</p>' +
+        '<p style="font-size: 0.9em; color: #666;">' +
+        'Rules will be applied when appointing moderators. Each moderator can be given specific filter-based permissions that determine which rows they can access and modify.' +
+        '</p>';
+}
+
+function clearModerationRuleForm() {
+    document.getElementById('ruleName').value = '';
+    document.getElementById('filterColumn').value = '';
+    document.getElementById('filterType').value = 'categories';
+    document.getElementById('filterValues').value = '';
+    document.getElementById('rangeType').value = 'above';
+    document.getElementById('threshold').value = '';
+    document.getElementById('minValue').value = '';
+    document.getElementById('maxValue').value = '';
+    document.getElementById('requireEdit').checked = true;
+    document.getElementById('requireAdd').checked = true;
+    document.getElementById('requireDelete').checked = true;
+    
+    // Reset display
+    document.getElementById('textFilterOptions').style.display = 'block';
+    document.getElementById('numericFilterOptions').style.display = 'none';
+    document.getElementById('thresholdInput').style.display = 'block';
+    document.getElementById('rangeInputs').style.display = 'none';
+}
+
 // Utility Functions
 function escapeHtml(text) {
     const div = document.createElement('div');

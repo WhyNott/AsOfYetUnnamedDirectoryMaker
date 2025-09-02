@@ -55,33 +55,81 @@ function displayPendingChanges(changes) {
         return;
     }
     
+    // Separate valid and invalid changes
+    const validChanges = changes.filter(change => change.status === 'pending');
+    const invalidChanges = changes.filter(change => change.status === 'invalid');
+    
     let html = '';
-    changes.forEach(change => {
-        html += '<div class="pending-change">';
-        html += '<div class="change-meta">';
-        html += 'Change ID: ' + change.id + ' • ';
-        html += 'Type: ' + change.change_type + ' • ';
-        html += 'Submitted by: ' + escapeHtml(change.submitted_by) + ' • ';
-        html += 'Date: ' + new Date(change.created_at).toLocaleDateString();
-        html += '</div>';
+    
+    // Display invalid changes first if any
+    if (invalidChanges.length > 0) {
+        html += '<div class="invalid-changes-section">';
+        html += '<h3 style="color: #d32f2f;">Invalid Changes (Schema Changed)</h3>';
+        html += '<p style="color: #666; font-size: 0.9em;">These changes are no longer valid because the sheet structure has changed since they were submitted.</p>';
         
-        html += '<div class="change-content">';
-        html += '<strong>Row ID:</strong> ' + change.row_id + '<br>';
-        html += '<strong>Column:</strong> ' + escapeHtml(change.column_name) + '<br>';
-        if (change.old_value) {
-            html += '<strong>Old Value:</strong> ' + escapeHtml(change.old_value) + '<br>';
-        }
-        html += '<strong>New Value:</strong> ' + escapeHtml(change.new_value);
-        html += '</div>';
+        invalidChanges.forEach(change => {
+            html += '<div class="pending-change invalid-change">';
+            html += '<div class="change-meta" style="background-color: #ffebee;">';
+            html += 'Change ID: ' + change.id + ' • ';
+            html += 'Type: ' + change.change_type + ' • ';
+            html += 'Submitted by: ' + escapeHtml(change.submitted_by) + ' • ';
+            html += 'Date: ' + new Date(change.created_at).toLocaleDateString();
+            html += '</div>';
+            
+            html += '<div class="change-content">';
+            html += '<strong>Row ID:</strong> ' + change.row_id + '<br>';
+            html += '<strong>Column:</strong> ' + escapeHtml(change.column_name) + '<br>';
+            if (change.old_value) {
+                html += '<strong>Old Value:</strong> ' + escapeHtml(change.old_value) + '<br>';
+            }
+            html += '<strong>New Value:</strong> ' + escapeHtml(change.new_value) + '<br>';
+            html += '<strong style="color: #d32f2f;">Reason Invalid:</strong> ' + escapeHtml(change.invalid_reason || 'Schema changed');
+            html += '</div>';
+            
+            html += '<div class="change-actions">';
+            html += '<button onclick="dismissInvalidChange(' + change.id + ')" class="button button-secondary">Dismiss</button>';
+            html += '</div>';
+            
+            html += '</div>';
+        });
+        html += '</div><br>';
+    }
+    
+    // Display valid pending changes
+    if (validChanges.length > 0) {
+        html += '<div class="valid-changes-section">';
+        html += '<h3>Pending Changes Awaiting Approval</h3>';
         
-        html += '<div class="change-actions">';
-        html += '<input type="text" id="reason_' + change.id + '" class="reason-input" placeholder="Reason (optional)">';
-        html += '<button onclick="approveChange(' + change.id + ', \'approve\')" class="button button-success">Approve</button>';
-        html += '<button onclick="approveChange(' + change.id + ', \'reject\')" class="button button-danger">Reject</button>';
+        validChanges.forEach(change => {
+            html += '<div class="pending-change">';
+            html += '<div class="change-meta">';
+            html += 'Change ID: ' + change.id + ' • ';
+            html += 'Type: ' + change.change_type + ' • ';
+            html += 'Submitted by: ' + escapeHtml(change.submitted_by) + ' • ';
+            html += 'Date: ' + new Date(change.created_at).toLocaleDateString();
+            html += '</div>';
+            
+            html += '<div class="change-content">';
+            html += '<strong>Row ID:</strong> ' + change.row_id + '<br>';
+            html += '<strong>Column:</strong> ' + escapeHtml(change.column_name) + '<br>';
+            if (change.old_value) {
+                html += '<strong>Old Value:</strong> ' + escapeHtml(change.old_value) + '<br>';
+            }
+            html += '<strong>New Value:</strong> ' + escapeHtml(change.new_value);
+            html += '</div>';
+            
+            html += '<div class="change-actions">';
+            html += '<input type="text" id="reason_' + change.id + '" class="reason-input" placeholder="Reason (optional)">';
+            html += '<button onclick="approveChange(' + change.id + ', \'approve\')" class="button button-success">Approve</button>';
+            html += '<button onclick="approveChange(' + change.id + ', \'reject\')" class="button button-danger">Reject</button>';
+            html += '</div>';
+            
+            html += '</div>';
+        });
         html += '</div>';
-        
-        html += '</div>';
-    });
+    } else if (invalidChanges.length === 0) {
+        html += '<p style="color: #666;">No pending changes require your approval at this time.</p>';
+    }
     
     section.innerHTML = html;
 }
@@ -119,6 +167,37 @@ async function approveChange(changeId, action) {
         }
     } catch (error) {
         console.error('Error processing change:', error);
+        alert('Network error occurred');
+    }
+}
+
+async function dismissInvalidChange(changeId) {
+    if (!confirm('Are you sure you want to dismiss this invalid change? This action cannot be undone.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/changes/dismiss?dir=' + directoryId, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                change_id: changeId
+            })
+        });
+        
+        if (response.ok) {
+            alert('Invalid change dismissed successfully!');
+            await loadPendingChanges(); // Reload the changes
+        } else {
+            const error = await response.text();
+            alert('Failed to dismiss change: ' + error);
+        }
+    } catch (error) {
+        console.error('Error dismissing change:', error);
         alert('Network error occurred');
     }
 }

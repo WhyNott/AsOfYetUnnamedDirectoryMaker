@@ -42,19 +42,21 @@ type ModeratorDomain struct {
 
 // PendingChange represents a change waiting for approval
 type PendingChange struct {
-	ID           int       `json:"id"`
-	DirectoryID  string    `json:"directory_id"`
-	RowID        int       `json:"row_id"`
-	ColumnName   string    `json:"column_name"`
-	OldValue     string    `json:"old_value"`
-	NewValue     string    `json:"new_value"`
-	ChangeType   string    `json:"change_type"`
-	SubmittedBy  string    `json:"submitted_by"`
-	Status       string    `json:"status"`
-	ReviewedBy   string    `json:"reviewed_by"`
-	ReviewedAt   *time.Time `json:"reviewed_at"`
-	Reason       string    `json:"reason"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID            int        `json:"id"`
+	DirectoryID   string     `json:"directory_id"`
+	RowID         int        `json:"row_id"`
+	ColumnName    string     `json:"column_name"`
+	OldValue      string     `json:"old_value"`
+	NewValue      string     `json:"new_value"`
+	ChangeType    string     `json:"change_type"`
+	SubmittedBy   string     `json:"submitted_by"`
+	Status        string     `json:"status"`
+	ReviewedBy    string     `json:"reviewed_by"`
+	ReviewedAt    *time.Time `json:"reviewed_at"`
+	Reason        string     `json:"reason"`
+	ColumnSchema  string     `json:"column_schema"`  // JSON array of column names when submitted
+	InvalidReason string     `json:"invalid_reason"` // Why change became invalid
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 // UserProfile represents a user's profile information
@@ -79,14 +81,14 @@ type ModeratorPermissions struct {
 
 // AppointModeratorRequest represents the API request for appointing a moderator
 type AppointModeratorRequest struct {
-	UserEmail        string   `json:"user_email"`
-	Username         string   `json:"username"`
-	AuthProvider     string   `json:"auth_provider"`
-	DirectoryID      string   `json:"directory_id"`
-	RowFilter        []int    `json:"row_filter"` // specific row IDs
-	CanEdit          bool     `json:"can_edit"`
-	CanApprove       bool     `json:"can_approve"`
-	RequiresApproval bool     `json:"requires_approval"`
+	UserEmail        string      `json:"user_email"`
+	Username         string      `json:"username"`
+	AuthProvider     string      `json:"auth_provider"`
+	DirectoryID      string      `json:"directory_id"`
+	Filters          interface{} `json:"filters"` // Controls from filters.go or legacy row IDs
+	CanEdit          bool        `json:"can_edit"`
+	CanApprove       bool        `json:"can_approve"`
+	RequiresApproval bool        `json:"requires_approval"`
 }
 
 // ChangeApprovalRequest represents the API request for approving/rejecting changes
@@ -114,6 +116,7 @@ const (
 	ChangeStatusPending  = "pending"
 	ChangeStatusApproved = "approved"
 	ChangeStatusRejected = "rejected"
+	ChangeStatusInvalid  = "invalid"
 )
 
 // Change type constants

@@ -78,6 +78,94 @@
             </div>
         </div>
         
+        <!-- Moderation Rules Section -->
+        <div>
+            <h2>Moderation Rules Configuration</h2>
+            <p>Configure which rows require moderator approval for changes:</p>
+            
+            <div>
+                <button id="showModerationRules">Configure Moderation Rules</button>
+                <button id="viewCurrentRules">View Current Rules</button>
+            </div>
+            
+            <!-- Moderation Rules Form -->
+            <div id="moderationRulesForm" style="display: none;">
+                <h3>Set Up Moderation Rules</h3>
+                <p style="font-size: 0.9em; color: #666;">
+                    Define filter-based rules to specify which rows require moderator approval for edits, additions, or deletions.
+                </p>
+                
+                <div class="form-group">
+                    <label>Rule Name:</label>
+                    <input type="text" id="ruleName" placeholder="e.g., High-value items">
+                </div>
+                
+                <div class="form-group">
+                    <label>Column to Filter:</label>
+                    <select id="filterColumn">
+                        <option value="">Select a column...</option>
+                        <!-- Will be populated dynamically -->
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Filter Type:</label>
+                    <select id="filterType">
+                        <option value="categories">Category Match</option>
+                        <option value="tags">Tag Match</option>
+                        <option value="locations">Location Match</option>
+                        <option value="numeric_range">Numeric Range</option>
+                    </select>
+                </div>
+                
+                <!-- Category/Tag/Location Filter Options -->
+                <div id="textFilterOptions" class="filter-options">
+                    <label>Values (comma-separated):</label>
+                    <input type="text" id="filterValues" placeholder="e.g., Premium, Enterprise, VIP">
+                </div>
+                
+                <!-- Numeric Range Filter Options -->
+                <div id="numericFilterOptions" class="filter-options" style="display: none;">
+                    <label>Range Type:</label>
+                    <select id="rangeType">
+                        <option value="above">Above</option>
+                        <option value="below">Below</option>
+                        <option value="between">Between</option>
+                    </select>
+                    <div id="thresholdInput">
+                        <label>Threshold:</label>
+                        <input type="number" id="threshold" placeholder="100">
+                    </div>
+                    <div id="rangeInputs" style="display: none;">
+                        <label>Min:</label>
+                        <input type="number" id="minValue" placeholder="0">
+                        <label>Max:</label>
+                        <input type="number" id="maxValue" placeholder="1000">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Operations Requiring Approval:</label>
+                    <div>
+                        <label><input type="checkbox" id="requireEdit" checked> Edit</label>
+                        <label><input type="checkbox" id="requireAdd" checked> Add</label>
+                        <label><input type="checkbox" id="requireDelete" checked> Delete</label>
+                    </div>
+                </div>
+                
+                <div>
+                    <button id="addModerationRule">Add Rule</button>
+                    <button id="cancelModerationRule">Cancel</button>
+                </div>
+            </div>
+            
+            <!-- Current Moderation Rules -->
+            <div id="currentRules" style="display: none;">
+                <h3>Current Moderation Rules</h3>
+                <div id="rulesContent">Loading...</div>
+            </div>
+        </div>
+        
         <form action="{{.ImportURL}}" method="POST" id="importForm">
             <h2>Import Google Sheet</h2>
             <p>Enter the URL of your Google Sheet:</p>

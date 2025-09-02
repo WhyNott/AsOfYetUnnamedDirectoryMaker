@@ -13,6 +13,11 @@ import (
 )
 
 func (app *App) handleAddRow(w http.ResponseWriter, r *http.Request) {
+	userEmail, ok := utils2.RequireAuthentication(w, r)
+	if !ok {
+		return
+	}
+
 	var addRowReq AddRowRequest
 	if err := json.NewDecoder(r.Body).Decode(&addRowReq); err != nil {
 		log.Printf("Failed to decode add row request: %v", err)
@@ -35,6 +40,45 @@ func (app *App) handleAddRow(w http.ResponseWriter, r *http.Request) {
 	// Get directory ID from query parameter or default to "default"
 	directoryID := utils2.GetDirectoryID(r)
 
+	// Check user permissions and apply moderation workflow
+	userType, err := app.GetUserType(userEmail, directoryID)
+	if err != nil {
+		log.Printf("Failed to get user type: %v", err)
+		utils2.InternalServerError(w, "Permission check failed")
+		return
+	}
+
+	if userType == UserTypeModerator {
+		// Check if moderator's changes require approval
+		permissions, err := app.GetModeratorPermissions(userEmail, directoryID)
+		if err != nil {
+			log.Printf("Failed to get moderator permissions: %v", err)
+			utils2.InternalServerError(w, "Permission check failed")
+			return
+		}
+
+		if !permissions.CanEdit {
+			utils2.AuthorizationError(w)
+			return
+		}
+
+		if permissions.RequiresApproval {
+			// Create pending change for row addition
+			err = app.createPendingAddRow(directoryID, addRowReq.Data, userEmail)
+			if err != nil {
+				log.Printf("Failed to create pending add row: %v", err)
+				utils2.InternalServerError(w, "Failed to submit change for approval")
+				return
+			}
+			utils2.RespondWithSuccess(w, nil, "Row addition submitted for approval")
+			return
+		}
+	} else if userType != UserTypeOwner && userType != UserTypeAdmin {
+		utils2.AuthorizationError(w)
+		return
+	}
+
+	// For owners/admins or moderators without approval requirement, add directly
 	// Try to add the row to the original Google Sheet
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	go func() {
@@ -102,4 +146,37 @@ func (app *App) addRowToSheet(ctx context.Context, rowData []string, directoryID
 	} else {
 		fmt.Println("Successfully re-imported sheet data after adding row")
 	}
+}
+
+// createPendingAddRow creates a pending change for row addition
+func (app *App) createPendingAddRow(directoryID string, rowData []string, submittedBy string) error {
+	// Get current column schema
+	columnSchema, err := app.getCurrentColumnSchema(directoryID)
+	if err != nil {
+		return fmt.Errorf("failed to get column schema: %v", err)
+	}
+
+	columnSchemaJSON, err := json.Marshal(columnSchema)
+	if err != nil {
+		return fmt.Errorf("failed to marshal column schema: %v", err)
+	}
+
+	// Convert row data to JSON for storage
+	rowDataJSON, err := json.Marshal(rowData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal row data: %v", err)
+	}
+
+	// Insert pending change (use row_id = -1 for new rows)
+	_, err = app.DB.Exec(`
+		INSERT INTO pending_changes 
+		(directory_id, row_id, column_name, old_value, new_value, change_type, submitted_by, column_schema, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, directoryID, -1, "new_row", "", string(rowDataJSON), ChangeTypeAdd, submittedBy, string(columnSchemaJSON), time.Now())
+
+	if err != nil {
+		return fmt.Errorf("failed to insert pending add row: %v", err)
+	}
+
+	return nil
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"directoryCommunityWebsite/internal/models"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -92,9 +93,46 @@ func (app *App) AppointModerator(appointedBy, appointedByType string, request Ap
 	}
 	
 	// Create moderator domain (permissions and row access)
-	rowFilterJSON, err := json.Marshal(request.RowFilter)
-	if err != nil {
-		return fmt.Errorf("failed to marshal row filter: %v", err)
+	var rowFilterJSON []byte
+
+	// Handle both legacy row filter format and new Controls format
+	if request.Filters != nil {
+		// Try to parse as Controls first
+		if controlsData, ok := request.Filters.([]interface{}); ok {
+			// Convert to models.Controls and validate
+			var controls models.Controls
+			filtersJSON, err := json.Marshal(controlsData)
+			if err != nil {
+				return fmt.Errorf("failed to marshal filters: %v", err)
+			}
+			
+			if err := json.Unmarshal(filtersJSON, &controls); err != nil {
+				// Fall back to legacy format (array of row IDs)
+				rowFilterJSON, err = json.Marshal(request.Filters)
+				if err != nil {
+					return fmt.Errorf("failed to marshal row filter: %v", err)
+				}
+			} else {
+				// Validate the filters against the directory
+				filter := NewModerationFilter(app)
+				if err := filter.ValidateFilters(controls, request.DirectoryID); err != nil {
+					return fmt.Errorf("invalid filter configuration: %v", err)
+				}
+				rowFilterJSON, err = json.Marshal(controls)
+				if err != nil {
+					return fmt.Errorf("failed to marshal validated filters: %v", err)
+				}
+			}
+		} else {
+			// Try as legacy format
+			rowFilterJSON, err = json.Marshal(request.Filters)
+			if err != nil {
+				return fmt.Errorf("failed to marshal row filter: %v", err)
+			}
+		}
+	} else {
+		// No filters specified
+		rowFilterJSON = []byte("[]")
 	}
 	
 	_, err = tx.Exec(`
@@ -212,13 +250,25 @@ func (app *App) GetModeratorPermissions(userEmail, directoryID string) (*Moderat
 		return nil, WrapDatabaseError(ErrTypeConnection, "failed to get moderator permissions", err)
 	}
 	
-	// Parse row filter
+	// Parse row filter - handle both legacy and new formats
 	var rowsAllowed []int
 	if domain.RowFilter != "" {
-		err = json.Unmarshal([]byte(domain.RowFilter), &rowsAllowed)
-		if err != nil {
-			log.Printf("Failed to parse row filter for moderator %s: %v", userEmail, err)
-			rowsAllowed = []int{} // Default to empty if parsing fails
+		// Try to parse as Controls first
+		var controls models.Controls
+		if err := json.Unmarshal([]byte(domain.RowFilter), &controls); err == nil {
+			// New filter-based system - get accessible rows
+			filter := NewModerationFilter(app)
+			rowsAllowed, err = filter.GetAccessibleRows(userEmail, directoryID)
+			if err != nil {
+				log.Printf("Failed to get accessible rows for moderator %s: %v", userEmail, err)
+				rowsAllowed = []int{} // Default to empty if fails
+			}
+		} else {
+			// Legacy format - try to parse as array of row IDs
+			if err := json.Unmarshal([]byte(domain.RowFilter), &rowsAllowed); err != nil {
+				log.Printf("Failed to parse row filter for moderator %s: %v", userEmail, err)
+				rowsAllowed = []int{} // Default to empty if parsing fails
+			}
 		}
 	}
 	
@@ -333,24 +383,24 @@ func (app *App) GetPendingChanges(directoryID, moderatorEmail string) ([]Pending
 		query = `
 			SELECT pc.id, pc.directory_id, pc.row_id, pc.column_name, pc.old_value, pc.new_value,
 			       pc.change_type, pc.submitted_by, pc.status, pc.reviewed_by, pc.reviewed_at,
-			       pc.reason, pc.created_at
+			       pc.reason, pc.column_schema, pc.invalid_reason, pc.created_at
 			FROM pending_changes pc
 			INNER JOIN moderator_domains md ON md.moderator_email = ?
-			WHERE pc.directory_id = ? AND pc.status = ? AND md.directory_id = pc.directory_id
+			WHERE pc.directory_id = ? AND pc.status IN (?, ?) AND md.directory_id = pc.directory_id
 			ORDER BY pc.created_at DESC
 		`
-		args = []interface{}{moderatorEmail, directoryID, ChangeStatusPending}
+		args = []interface{}{moderatorEmail, directoryID, ChangeStatusPending, ChangeStatusInvalid}
 	} else {
 		// For admins/super admins, show all pending changes
 		query = `
 			SELECT id, directory_id, row_id, column_name, old_value, new_value,
 			       change_type, submitted_by, status, reviewed_by, reviewed_at,
-			       reason, created_at
+			       reason, column_schema, invalid_reason, created_at
 			FROM pending_changes
-			WHERE directory_id = ? AND status = ?
+			WHERE directory_id = ? AND status IN (?, ?)
 			ORDER BY created_at DESC
 		`
-		args = []interface{}{directoryID, ChangeStatusPending}
+		args = []interface{}{directoryID, ChangeStatusPending, ChangeStatusInvalid}
 	}
 	
 	rows, err := app.DB.Query(query, args...)
@@ -364,14 +414,89 @@ func (app *App) GetPendingChanges(directoryID, moderatorEmail string) ([]Pending
 		var change PendingChange
 		err := rows.Scan(&change.ID, &change.DirectoryID, &change.RowID, &change.ColumnName,
 			&change.OldValue, &change.NewValue, &change.ChangeType, &change.SubmittedBy,
-			&change.Status, &change.ReviewedBy, &change.ReviewedAt, &change.Reason, &change.CreatedAt)
+			&change.Status, &change.ReviewedBy, &change.ReviewedAt, &change.Reason, 
+			&change.ColumnSchema, &change.InvalidReason, &change.CreatedAt)
 		if err != nil {
 			return nil, WrapDatabaseError(ErrTypeConnection, "failed to scan pending change", err)
 		}
 		changes = append(changes, change)
 	}
+
+	// Check for schema changes and mark invalid changes
+	changes, err = app.validatePendingChangesSchema(directoryID, changes)
+	if err != nil {
+		log.Printf("Error validating pending changes schema: %v", err)
+		// Continue with original changes if validation fails
+	}
 	
 	return changes, nil
+}
+
+// validatePendingChangesSchema checks if pending changes are still valid based on current schema
+func (app *App) validatePendingChangesSchema(directoryID string, changes []PendingChange) ([]PendingChange, error) {
+	// Get current column schema
+	currentSchema, err := app.getCurrentColumnSchema(directoryID)
+	if err != nil {
+		return changes, fmt.Errorf("failed to get current schema: %v", err)
+	}
+
+	var updatedChanges []PendingChange
+	for _, change := range changes {
+		// Skip already processed changes
+		if change.Status != ChangeStatusPending {
+			updatedChanges = append(updatedChanges, change)
+			continue
+		}
+
+		// Parse the stored column schema from when the change was submitted
+		var submittedSchema []string
+		if change.ColumnSchema != "" {
+			if err := json.Unmarshal([]byte(change.ColumnSchema), &submittedSchema); err != nil {
+				log.Printf("Failed to parse column schema for change %d: %v", change.ID, err)
+				updatedChanges = append(updatedChanges, change)
+				continue
+			}
+		}
+
+		// Check if schemas match
+		schemaChanged := !schemasEqual(submittedSchema, currentSchema)
+
+		if schemaChanged {
+			// Mark change as invalid
+			change.Status = ChangeStatusInvalid
+			change.InvalidReason = "Column structure has changed since this change was submitted"
+			
+			// Update in database
+			_, err := app.DB.Exec(`
+				UPDATE pending_changes 
+				SET status = ?, invalid_reason = ? 
+				WHERE id = ?
+			`, ChangeStatusInvalid, change.InvalidReason, change.ID)
+			
+			if err != nil {
+				log.Printf("Failed to mark change %d as invalid: %v", change.ID, err)
+			}
+		}
+
+		updatedChanges = append(updatedChanges, change)
+	}
+
+	return updatedChanges, nil
+}
+
+// schemasEqual compares two column schemas for equality
+func schemasEqual(schema1, schema2 []string) bool {
+	if len(schema1) != len(schema2) {
+		return false
+	}
+	
+	for i, col1 := range schema1 {
+		if col1 != schema2[i] {
+			return false
+		}
+	}
+	
+	return true
 }
 
 // CanApproveChange checks if a user can approve a specific change
