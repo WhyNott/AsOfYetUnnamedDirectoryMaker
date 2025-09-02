@@ -65,8 +65,29 @@ func (app *App) importDirectoryFromSheet(
 		return fmt.Errorf("failed to get directory database: %v", err)
 	}
 
-	if _, err := db.Exec("DELETE FROM _meta_directory_column_types"); err != nil {
+	if _, err := db.Exec("DROP TABLE IF EXISTS _meta_directory_column_types"); err != nil {
 		return fmt.Errorf("failed to clear column types table: %v", err)
+	}
+
+	_, err = db.Exec(`
+		CREATE Table _meta_directory_column_types (
+  	columnName TEXT NOT NULL,
+  	columnTable TEXT NOT NULL,
+  	columnType TEXT CHECK (
+  		columnType IN (
+  			'basic',
+  			'numeric',
+  			'location',
+  			'tag',
+  			'category'
+  		)
+  	) NOT NULL,
+  	PRIMARY KEY (columnName, columnTable)
+  );
+	`)
+
+	if err != nil {
+		return fmt.Errorf("failed to reset _meta_directory_column_types: %v", err)
 	}
 
 	for i := range columnNames {
@@ -112,9 +133,9 @@ func (app *App) importDirectoryFromSheet(
 	}
 
 	// Create the new directory table
-	query := fmt.Sprintf("CREATE TABLE %s (%s)", directoryID, strings.Join(columnDefs, ", "))
+	query := fmt.Sprintf("CREATE TABLE '%s' (%s)", directoryID, strings.Join(columnDefs, ", "))
 	if _, err := db.Exec(query); err != nil {
-		return fmt.Errorf("failed to create directory table: %v", err)
+		return fmt.Errorf("failed to create directory table based on query %v: %v ", query, err)
 	}
 
 	// Insert data from the sheet
@@ -129,7 +150,7 @@ func (app *App) importDirectoryFromSheet(
 		for i := range placeholders {
 			placeholders[i] = "?"
 		}
-		insertQuery := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		insertQuery := fmt.Sprintf("INSERT INTO '%s' (%s) VALUES (%s)",
 			directoryID, columnList, strings.Join(placeholders, ", "))
 
 		for i := 1; i < len(resp.Values); i++ { // Skip header row
@@ -170,7 +191,7 @@ func (app *App) importDirectoryFromSheet(
 								tag = strings.TrimSpace(tag)
 								if tag != "" {
 									_, err := db.Exec(
-										fmt.Sprintf("INSERT INTO %s (columnTable, rowID, tag) VALUES (?, ?, ?)", tableName),
+										fmt.Sprintf("INSERT INTO '%s' (columnTable, rowID, tag) VALUES (?, ?, ?)", tableName),
 										directoryID, rowID, tag)
 									if err != nil {
 										return fmt.Errorf("failed to insert tag %s for column %s: %v",
